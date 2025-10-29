@@ -1,0 +1,38 @@
+{
+  "name": "eco-empire-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "api": "node server/index.cjs",
+    "dev:all": "concurrently \"npm:api\" \"npm:dev\""
+  },
+  "dependencies": {
+    "@twa-dev/sdk": "^7.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.1.5",
+    "framer-motion": "^11.0.0",
+    "git": "^0.1.5",
+    "helmet": "^7.0.0",
+    "mongodb": "^6.9.0",
+    "nedb-promises": "^6.2.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.2",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^8.2.2",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
