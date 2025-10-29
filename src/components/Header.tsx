@@ -23,9 +23,6 @@ export default function Header({ balance, view, setView, game }: Props) {
             <div className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] text-white font-semibold text-sm shadow-md whitespace-nowrap">
               {balance} $ECO
             </div>
-            <div className={`px-2 py-1 rounded-lg text-xs font-semibold ${gameAPI.isSaving() ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
-              {gameAPI.isSaving() ? 'Синхр...' : 'Синхр ок'}
-            </div>
             <TonPlaceholder />
           </div>
         </div>

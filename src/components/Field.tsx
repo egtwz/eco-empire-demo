@@ -32,7 +32,7 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
               <button
                 key={cell.id}
                 onClick={() => openSeedModal(cell.id)}
-                className="aspect-square rounded-xl bg-white border border-gray-300 shadow-md flex items-center justify-center hover:bg-gray-50"
+                className="aspect-square rounded-xl bg-white shadow-md flex items-center justify-center hover:bg-gray-50 focus:outline-none focus:ring-0"
               >
                 <span className="text-2xl">➕</span>
               </button>
@@ -44,7 +44,7 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
             const m = Math.floor(sec / 60).toString();
             const s = (sec % 60).toString().padStart(2, '0');
             return (
-              <div key={cell.id} className="aspect-square rounded-xl bg-white border border-blue-300 shadow-md flex flex-col items-center justify-center">
+              <div key={cell.id} className="aspect-square rounded-xl bg-white shadow-md flex flex-col items-center justify-center">
                 <div className="text-xl">⏳</div>
                 <div className="text-xs text-gray-600">{m}:{s}</div>
               </div>
@@ -55,7 +55,7 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
             <button
               key={cell.id}
               onClick={() => harvest(cell.id)}
-              className="aspect-square rounded-xl bg-[var(--accent)] border border-green-500 shadow-md flex items-center justify-center hover:opacity-90"
+              className="aspect-square rounded-xl bg-[var(--accent)] shadow-md flex items-center justify-center hover:opacity-90 focus:outline-none focus:ring-0"
             >
               <span className="text-2xl">✅</span>
             </button>
