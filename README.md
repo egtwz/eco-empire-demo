@@ -18,10 +18,6 @@ npm run build
 npm run preview
 ```
 
-## Деплой
-
-Готово к деплою на Vercel/Netlify. Для Telegram Mini App укажите URL билда и включите WebApp.
-
 ## Стек
 
 - React + TypeScript + Vite
