@@ -23,11 +23,13 @@ export default function IngredientSelector({ open, ingredient, onClose, onSelect
   const availableItems = useMemo(() => {
     if (!ingredient) return [];
     
-    return state.inventory.filter(item => 
+    // Найти точный предмет в инвентаре
+    const item = state.inventory.find(item => 
       item.id === ingredient.id && 
-      item.type === ingredient.type && 
-      item.count > 0
+      item.type === ingredient.type
     );
+    
+    return item && item.count > 0 ? [item] : [];
   }, [state.inventory, ingredient]);
 
   const getRequiredItemName = () => {

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { RARITY_COLORS } from '../data/seeds';
-import { FRUITS } from '../data/fruits';
+import { getFruitInfo } from '../utils/hybridUtils';
 import ItemActionModal from './ItemActionModal';
 import HybridCrafting from './HybridCrafting';
 
@@ -79,7 +79,7 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
     let totalIncome = 0;
     
     fruits.forEach(fruit => {
-      const fruitDef = FRUITS[fruit.id as keyof typeof FRUITS];
+      const fruitDef = getFruitInfo(fruit.id);
       if (fruitDef) {
         totalIncome += fruitDef.sellPrice * fruit.count;
         sellFruit(fruit.id, fruit.count);
@@ -92,7 +92,7 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
   const getTotalFruitValue = () => {
     const fruits = state.inventory.filter(item => item.type === 'fruit');
     return fruits.reduce((total, fruit) => {
-      const fruitDef = FRUITS[fruit.id as keyof typeof FRUITS];
+      const fruitDef = getFruitInfo(fruit.id);
       return total + (fruitDef ? fruitDef.sellPrice * fruit.count : 0);
     }, 0);
   };

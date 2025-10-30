@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '../hooks/useGameLogic';
-import { FRUITS } from '../data/fruits';
-import { SEEDS } from '../data/seeds';
+import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
 import BuyConfirmModal from './BuyConfirmModal';
 import GiftModal from './GiftModal';
 
@@ -27,10 +26,10 @@ export default function ItemActionModal({ open, item, onClose, game }: Props & {
 
   const getSellPrice = () => {
     if (item.type === 'fruit') {
-      const fruitDef = FRUITS[item.id as keyof typeof FRUITS];
+      const fruitDef = getFruitInfo(item.id);
       return fruitDef ? fruitDef.sellPrice : 0;
     } else {
-      const seedDef = SEEDS[item.id as keyof typeof SEEDS];
+      const seedDef = getSeedInfo(item.id);
       return seedDef ? Math.floor(seedDef.price * 0.5) : 0; // 50% от стоимости
     }
   };

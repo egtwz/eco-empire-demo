@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gameAPI } from '../api/gameApi';
 import { SEEDS, SeedId } from '../data/seeds';
 import { FRUITS } from '../data/fruits';
+import { HYBRID_RECIPES } from '../data/hybrids';
+import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
 
 export interface Cell {
   id: number;
-  seed?: SeedId;
+  seed?: string; // может быть SeedId или гибридное семя
   plantedAt?: number; // epoch ms
   status: 'empty' | 'growing' | 'ready';
 }
@@ -175,9 +177,12 @@ export function useGameLogic(tgId?: number) {
           } else {
             restoredField = restoredField.map((cell) => {
               if (cell.status === 'growing' && cell.seed && cell.plantedAt) {
-                const growMs = SEEDS[cell.seed].growSeconds * 1000;
-                if (now() - cell.plantedAt >= growMs) {
-                  return { ...cell, status: 'ready' as const };
+                const seedDef = getSeedInfo(cell.seed);
+                if (seedDef) {
+                  const growMs = seedDef.growSeconds * 1000;
+                  if (now() - cell.plantedAt >= growMs) {
+                    return { ...cell, status: 'ready' as const };
+                  }
                 }
               }
               return cell;
@@ -228,10 +233,13 @@ export function useGameLogic(tgId?: number) {
         let changed = false;
         const nextField = prev.field.map((cell) => {
           if (cell.status === 'growing' && cell.seed && cell.plantedAt) {
-            const growMs = SEEDS[cell.seed].growSeconds * 1000;
-            if (now() - cell.plantedAt >= growMs) {
-              changed = true;
-              return { ...cell, status: 'ready' as const };
+            const seedDef = getSeedInfo(cell.seed);
+            if (seedDef) {
+              const growMs = seedDef.growSeconds * 1000;
+              if (now() - cell.plantedAt >= growMs) {
+                changed = true;
+                return { ...cell, status: 'ready' as const };
+              }
             }
           }
           return cell;
@@ -255,15 +263,21 @@ export function useGameLogic(tgId?: number) {
 
   const closeSeedModal = useCallback(() => setSeedSelectForCell(null), []);
 
-  const plantSeed = useCallback((cellId: number, seedId: SeedId) => {
+  const plantSeed = useCallback((cellId: number, seedId: string) => {
     setState((prev) => {
       const cell = prev.field[cellId];
       if (!cell || cell.status !== 'empty') return prev;
       const invItem = getItem(prev.inventory, seedId);
       if (!invItem || invItem.count <= 0) return prev;
+      
+      const seedDef = getSeedInfo(seedId);
+      if (!seedDef) {
+        console.error('Seed not found:', seedId);
+        return prev;
+      }
+      
       const plantedAt = now();
       const nextField = prev.field.map((c) => (c.id === cellId ? { id: cellId, seed: seedId, plantedAt, status: 'growing' as const } : c));
-      const seedDef = SEEDS[seedId];
       const nextInv = addCount(prev.inventory, seedId, -1, {
         id: seedId,
         type: 'seed',
@@ -285,8 +299,20 @@ export function useGameLogic(tgId?: number) {
     setState((prev) => {
       const cell = prev.field[cellId];
       if (!cell || cell.status !== 'ready' || !cell.seed) return prev;
-      const fruitId = SEEDS[cell.seed].fruitId;
-      const fruitDef = FRUITS[fruitId as keyof typeof FRUITS];
+      
+      const seedDef = getSeedInfo(cell.seed);
+      if (!seedDef) {
+        console.error('Seed not found during harvest:', cell.seed);
+        return prev;
+      }
+      
+      const fruitId = seedDef.fruitId;
+      const fruitDef = getFruitInfo(fruitId);
+      if (!fruitDef) {
+        console.error('Fruit not found during harvest:', fruitId);
+        return prev;
+      }
+      
       const nextInv = addCount(prev.inventory, fruitId, 1, {
         id: fruitId,
         type: 'fruit',
@@ -297,7 +323,7 @@ export function useGameLogic(tgId?: number) {
       const nextField = prev.field.map((c) => (c.id === cellId ? { id: cellId, status: 'empty' as const } : c));
       
       // Получаем редкость семени для расчета XP
-      const seedRarity = SEEDS[cell.seed].rarity;
+      const seedRarity = seedDef.rarity;
       const xpGained = getXPForRarity(seedRarity);
       const newXP = prev.xp + xpGained;
       const requiredXP = getRequiredXP(prev.level);
@@ -338,7 +364,7 @@ export function useGameLogic(tgId?: number) {
 
   const sellFruit = useCallback((fruitId: string, count: number) => {
     setState((prev) => {
-      const fruit = FRUITS[fruitId as keyof typeof FRUITS];
+      const fruit = getFruitInfo(fruitId);
       if (!fruit || count <= 0) return prev;
       const invItem = getItem(prev.inventory, fruitId);
       if (!invItem || invItem.count < count) return prev;
@@ -361,7 +387,7 @@ export function useGameLogic(tgId?: number) {
 
   const sellSeed = useCallback((seedId: string, count: number) => {
     setState((prev) => {
-      const seed = SEEDS[seedId as keyof typeof SEEDS];
+      const seed = getSeedInfo(seedId);
       if (!seed || count <= 0) return prev;
       const invItem = getItem(prev.inventory, seedId);
       if (!invItem || invItem.count < count) return prev;
@@ -538,7 +564,13 @@ export function useGameLogic(tgId?: number) {
 
   const addIngredientToCraft = useCallback((recipeId: string, index: number, ingredientId: string, ingredientType: 'seed' | 'fruit', count: number) => {
     setState(prev => {
-      // Удаляем из инвентаря
+      const existingDraft = prev.craftDraft?.recipeId === recipeId ? prev.craftDraft : { recipeId, addedIngredients: [] };
+      const existingIngredient = existingDraft.addedIngredients.find(i => i.index === index);
+      
+      // Если ингредиент уже был добавлен, суммируем количество
+      const totalCount = existingIngredient ? existingIngredient.count + count : count;
+      
+      // Удаляем из инвентаря только добавляемое количество
       let newInventory = addCount(prev.inventory, ingredientId, -count, {
         id: ingredientId,
         type: ingredientType,
@@ -547,8 +579,7 @@ export function useGameLogic(tgId?: number) {
         count: 0
       });
 
-      // Добавляем в черновик
-      const existingDraft = prev.craftDraft?.recipeId === recipeId ? prev.craftDraft : { recipeId, addedIngredients: [] };
+      // Добавляем в черновик с обновленным количеством
       const filteredIngredients = existingDraft.addedIngredients.filter(i => i.index !== index);
       
       return {
@@ -556,7 +587,7 @@ export function useGameLogic(tgId?: number) {
         inventory: newInventory,
         craftDraft: {
           recipeId,
-          addedIngredients: [...filteredIngredients, { index, id: ingredientId, type: ingredientType, count }]
+          addedIngredients: [...filteredIngredients, { index, id: ingredientId, type: ingredientType, count: totalCount }]
         }
       };
     });
@@ -587,29 +618,17 @@ export function useGameLogic(tgId?: number) {
   }, []);
 
   const startCraft = useCallback((recipeId: string, ingredients: { id: string; type: 'seed' | 'fruit'; count: number }[]) => {
-    setState(prev => ({
-      ...prev,
-      activeCraft: {
-        recipeId,
-        startTime: now(),
-        ingredients
-      },
-      craftDraft: null
-    }));
-  }, []);
-
-  const completeCraft = useCallback(() => {
     setState(prev => {
-      if (!prev.activeCraft) return prev;
-      
-      const { HYBRID_RECIPES } = require('../data/hybrids');
-      const recipe = HYBRID_RECIPES.find((r: any) => r.id === prev.activeCraft!.recipeId);
-      if (!recipe) return prev;
+      const recipe = HYBRID_RECIPES.find((r) => r.id === recipeId);
+      if (!recipe) {
+        console.error('Recipe not found:', recipeId);
+        return prev;
+      }
 
-      // Ингредиенты уже удалены при добавлении в крафт, только добавляем результат
-      const newInventory = addCount(prev.inventory, recipe.resultId, 1, {
-        id: recipe.resultId,
-        type: 'fruit',
+      // Мгновенно создаем гибридное семя - добавляем в инвентарь
+      const newInventory = addCount(prev.inventory, recipe.resultSeedId, 1, {
+        id: recipe.resultSeedId,
+        type: 'seed',
         name: recipe.resultName,
         emoji: recipe.resultEmoji,
         count: 0,
@@ -618,29 +637,27 @@ export function useGameLogic(tgId?: number) {
       return {
         ...prev,
         inventory: newInventory,
-        activeCraft: null,
+        craftDraft: null,
         hybridsCreated: prev.hybridsCreated + 1
       };
     });
   }, []);
 
+  const completeCraft = useCallback(() => {
+    // Эта функция больше не нужна, но оставим для совместимости
+    setState(prev => ({ ...prev, activeCraft: null, craftDraft: null }));
+  }, []);
+
   const getCraftProgress = useCallback(() => {
-    if (!state.activeCraft) return null;
-    
-    const { HYBRID_RECIPES } = require('../data/hybrids');
-    const recipe = HYBRID_RECIPES.find((r: any) => r.id === state.activeCraft!.recipeId);
-    if (!recipe) return null;
-
-    const elapsed = now() - state.activeCraft.startTime;
-    const progress = Math.min(100, (elapsed / (recipe.craftTime * 1000)) * 100);
-    const isComplete = elapsed >= recipe.craftTime * 1000;
-
-    return { recipe, progress, isComplete, timeLeft: Math.max(0, recipe.craftTime - Math.floor(elapsed / 1000)) };
-  }, [state.activeCraft]);
+    // Возвращаем null, так как крафт мгновенный
+    return null;
+  }, []);
 
   const timeLeftForCell = useCallback((cell: Cell) => {
     if (cell.status !== 'growing' || !cell.seed || !cell.plantedAt) return 0;
-    const growMs = SEEDS[cell.seed].growSeconds * 1000;
+    const seedDef = getSeedInfo(cell.seed);
+    if (!seedDef) return 0;
+    const growMs = seedDef.growSeconds * 1000;
     return Math.max(0, growMs - (now() - cell.plantedAt));
   }, []);
 

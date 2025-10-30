@@ -1,19 +1,21 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '../hooks/useGameLogic';
-import { HYBRID_RECIPES, HybridRecipe } from '../data/hybrids';
+import { HYBRID_RECIPES, HybridRecipe, calculateHybridSeedPrice, calculateHybridGrowTime, calculateHybridFruitPrice } from '../data/hybrids';
 import { SEEDS } from '../data/seeds';
 import { FRUITS } from '../data/fruits';
 import IngredientSelector from './IngredientSelector';
+import CraftSuccessModal from './CraftSuccessModal';
 
 interface Props {
   game: ReturnType<typeof useGameLogic>;
 }
 
 export default function HybridCrafting({ game }: Props) {
-  const { state, startCraft, completeCraft, getCraftProgress, initCraftDraft, addIngredientToCraft, cancelCraftDraft } = game;
+  const { state, startCraft, initCraftDraft, addIngredientToCraft, cancelCraftDraft } = game;
   const [selectedRecipe, setSelectedRecipe] = useState<HybridRecipe | null>(null);
   const [showIngredientSelector, setShowIngredientSelector] = useState<{ index: number; ingredient: any } | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState<{ name: string; emoji: string } | null>(null);
 
   // Восстанавливаем черновик только при первой загрузке компонента
   useEffect(() => {
@@ -27,19 +29,6 @@ export default function HybridCrafting({ game }: Props) {
 
   // Получаем добавленные ингредиенты из черновика
   const addedIngredients = state.craftDraft?.addedIngredients || [];
-
-  const craftProgress = getCraftProgress();
-
-  // Защита от белого экрана - если нет прогресса и нет выбранного рецепта, сбрасываем черновик
-  useEffect(() => {
-    if (!craftProgress && !selectedRecipe && state.craftDraft) {
-      // Если есть черновик, но нет активного крафта и выбранного рецепта - восстанавливаем
-      const recipe = HYBRID_RECIPES.find(r => r.id === state.craftDraft!.recipeId);
-      if (recipe) {
-        setSelectedRecipe(recipe);
-      }
-    }
-  }, [craftProgress, selectedRecipe, state.craftDraft]);
 
   // Ограничения по уровням для крафтов (тирам соответствует максимальная редкость ингредиентов)
   const rarityToTier: Record<string, number> = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };
@@ -62,9 +51,8 @@ export default function HybridCrafting({ game }: Props) {
     return Math.max(...recipe.ingredients.map((ing: any) => getIngredientTier(ing)));
   };
 
-  // Обработчик завершения крафта
-  const handleCompleteCraft = () => {
-    completeCraft();
+  const handleCloseSuccess = () => {
+    setShowSuccessModal(null);
     setSelectedRecipe(null); // Возвращаемся к списку рецептов
   };
 
@@ -75,7 +63,17 @@ export default function HybridCrafting({ game }: Props) {
   };
 
   const handleIngredientClick = (index: number, ingredient: any) => {
-    setShowIngredientSelector({ index, ingredient });
+    // Вычисляем оставшееся требуемое количество
+    const addedIngredient = addedIngredients.find(ing => ing.index === index);
+    const remainingCount = ingredient.count - (addedIngredient?.count || 0);
+    
+    setShowIngredientSelector({ 
+      index, 
+      ingredient: {
+        ...ingredient,
+        count: remainingCount // Передаем оставшееся количество, а не полное
+      }
+    });
   };
 
   const handleIngredientSelect = (itemId: string, count: number) => {
@@ -98,9 +96,9 @@ export default function HybridCrafting({ game }: Props) {
 
   const canCraft = () => {
     if (!selectedRecipe) return false;
+    
     return selectedRecipe.ingredients.every((ingredient, index) => {
       const addedIngredient = addedIngredients.find(ing => ing.index === index);
-      // Проверяем что ингредиент добавлен И количество совпадает с требуемым
       return addedIngredient && addedIngredient.count === ingredient.count;
     });
   };
@@ -114,8 +112,14 @@ export default function HybridCrafting({ game }: Props) {
       count: ing.count
     }));
 
+    // Мгновенно крафтим
     startCraft(selectedRecipe.id, ingredients);
-    // НЕ очищаем selectedRecipe - показываем прогресс крафта
+    
+    // Показываем модальное окно успеха
+    setShowSuccessModal({
+      name: selectedRecipe.resultName,
+      emoji: selectedRecipe.resultEmoji
+    });
   };
 
   const getItemInfo = (id: string, type: 'seed' | 'fruit') => {
@@ -166,6 +170,10 @@ export default function HybridCrafting({ game }: Props) {
           {sortedRecipes.map((recipe) => {
             const tier = getRecipeTier(recipe);
             const locked = tier > allowedTier || playerLevel < 2;
+            const seedPrice = calculateHybridSeedPrice(recipe.ingredients);
+            const growTime = calculateHybridGrowTime(recipe.ingredients);
+            const fruitPrice = calculateHybridFruitPrice(recipe.ingredients);
+            
             return (
             <div key={recipe.id} className={`p-3 rounded-2xl bg-white border border-gray-300 shadow-md ${locked ? 'opacity-70' : ''}`}>
               <div className="flex items-center gap-3 mb-2">
@@ -180,8 +188,12 @@ export default function HybridCrafting({ game }: Props) {
                     </span>
                   </div>
                   <div className="text-xs text-gray-500 mt-1">{recipe.description}</div>
-                  <div className="text-xs text-green-600 mt-1">
-                    Цена продажи: {recipe.sellPrice} $ECO
+                  <div className="text-xs text-gray-700 mt-1 flex gap-3">
+                    <span>💰 Семя: {seedPrice} $ECO</span>
+                    <span>⏱ Рост: {growTime}с</span>
+                  </div>
+                  <div className="text-xs text-green-600 mt-0.5">
+                    🍎 Фрукт продается за: {fruitPrice} $ECO
                   </div>
                 </div>
                 <button
@@ -216,9 +228,10 @@ export default function HybridCrafting({ game }: Props) {
                 const addedIngredient = addedIngredients.find(ing => ing.index === index);
                 const addedItemInfo = addedIngredient ? getItemInfo(addedIngredient.id, addedIngredient.type) : null;
                 
-                // Если ингредиент УЖЕ добавлен, не проверяем наличие (его уже нет в инвентаре)
-                // Если НЕ добавлен, проверяем наличие в инвентаре
-                const available = addedIngredient ? 0 : getAvailableCount(ingredient.id, ingredient.type);
+                // Проверяем оставшееся количество в инвентаре (с учетом уже добавленных)
+                const available = getAvailableCount(ingredient.id, ingredient.type);
+                const remainingNeeded = ingredient.count - (addedIngredient?.count || 0);
+                const canAddMore = available > 0 && remainingNeeded > 0;
                 const displayEmoji = itemInfo?.emoji;
                 
                 return (
@@ -237,86 +250,48 @@ export default function HybridCrafting({ game }: Props) {
                           : `${itemInfo?.name || ingredient.id} (нужно ${ingredient.count} шт)`
                         }
                       </div>
-                      <div className={`text-xs ${addedIngredient ? (addedIngredient.count === ingredient.count ? 'text-green-600' : 'text-orange-600') : 'text-gray-500'}`}>
+                      <div className={`text-xs ${addedIngredient ? (remainingNeeded === 0 ? 'text-green-600' : 'text-orange-600') : 'text-gray-500'}`}>
                         {addedIngredient 
-                          ? (addedIngredient.count === ingredient.count ? '✓ Полностью добавлено' : `⚠ Нужно ещё ${ingredient.count - addedIngredient.count} шт`)
+                          ? (remainingNeeded === 0 ? '✓ Полностью добавлено' : `⚠ Нужно ещё ${remainingNeeded} шт (в наличии: ${available})`)
                           : `В наличии: ${available} шт`
                         }
                       </div>
                     </div>
                     <button
                       onClick={() => handleIngredientClick(index, ingredient)}
-                      disabled={(addedIngredient && addedIngredient.count === ingredient.count) || available === 0 || !!craftProgress}
+                      disabled={!canAddMore}
                       className={`px-3 py-1 rounded-lg text-xs font-medium ${
-                        addedIngredient 
-                          ? (addedIngredient.count === ingredient.count 
-                              ? 'bg-green-500 text-white cursor-default' 
-                              : 'bg-blue-500 text-white hover:bg-blue-600')
-                          : available > 0 
+                        remainingNeeded === 0
+                          ? 'bg-green-500 text-white cursor-default' 
+                          : canAddMore 
                             ? 'bg-blue-500 text-white hover:bg-blue-600' 
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       }`}
                     >
-                      {addedIngredient 
-                        ? (addedIngredient.count === ingredient.count ? '✓ Готово' : 'Выбрать')
-                        : 'Выбрать'
-                      }
+                      {remainingNeeded === 0 ? '✓ Готово' : 'Выбрать'}
                     </button>
                   </div>
                 );
               })}
             </div>
 
-            {/* Прогресс бар если крафт начат */}
-            {craftProgress && (
-              <div className="mt-4">
-                <div className="mb-2">
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-600">Прогресс крафта</span>
-                    <span className="font-semibold text-blue-600">{Math.round(craftProgress.progress)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3">
-                    <div 
-                      className="bg-blue-500 h-3 rounded-full transition-all duration-300"
-                      style={{ width: `${craftProgress.progress}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="text-center text-sm text-gray-600 mb-3">
-                  {craftProgress.timeLeft > 0 ? `Осталось: ${craftProgress.timeLeft} сек` : '✅ Готово!'}
-                </div>
-              </div>
-            )}
-
             <div className="flex gap-2 mt-4">
               <button
                 onClick={handleCancel}
-                disabled={!!craftProgress}
-                className={`flex-1 py-2 rounded-xl font-medium ${
-                  craftProgress 
-                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className="flex-1 py-2 rounded-xl font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
               >
                 Отменить
               </button>
               <button
-                onClick={craftProgress?.isComplete ? handleCompleteCraft : handleCraft}
-                disabled={craftProgress ? !craftProgress.isComplete : !canCraft()}
+                onClick={handleCraft}
+                disabled={!canCraft()}
                 className={`flex-1 py-2 rounded-xl font-medium text-white ${
-                  craftProgress 
-                    ? (craftProgress.isComplete 
-                        ? 'bg-green-500 hover:bg-green-600' 
-                        : 'bg-gray-400 cursor-not-allowed')
-                    : (canCraft() 
-                        ? 'bg-green-500 hover:bg-green-600' 
-                        : 'bg-gray-400 cursor-not-allowed')
+                  canCraft() 
+                    ? 'bg-green-500 hover:bg-green-600' 
+                    : 'bg-gray-400 cursor-not-allowed'
                 }`}
               >
-                {craftProgress 
-                  ? (craftProgress.isComplete ? 'Забрать' : `Крафтится... ${craftProgress.timeLeft} сек`)
-                  : 'Начать крафт'
-                }
+                Начать крафт
               </button>
             </div>
           </div>
@@ -330,6 +305,15 @@ export default function HybridCrafting({ game }: Props) {
           onClose={() => setShowIngredientSelector(null)}
           onSelect={handleIngredientSelect}
           game={game}
+        />
+      )}
+
+      {showSuccessModal && (
+        <CraftSuccessModal
+          open={!!showSuccessModal}
+          resultName={showSuccessModal.name}
+          resultEmoji={showSuccessModal.emoji}
+          onClose={handleCloseSuccess}
         />
       )}
     </div>
