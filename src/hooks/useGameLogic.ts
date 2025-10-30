@@ -25,7 +25,7 @@ export interface GameState {
   inventory: InventoryItem[];
   balance: number;
   tonBalance: number;
-  fieldLevel: number; // 0=3x3, 1=4x4, 2=5x5, 3=6x6, 4=7x7, 5=8x8, 6=9x9, 7=10x10, 8=11x11
+  fieldLevel: number; // 0=3x3, 1=4x4, 2=5x5, 3=6x6, 4=7x7, 5=8x8 (МАКСИМУМ)
   level: number; // 1-10
   xp: number;
   totalEarned: number;
@@ -54,7 +54,7 @@ export interface GameState {
 export type View = 'field' | 'shop' | 'inventory' | 'exchange' | 'profile';
 
 const FIELD_SIZE = 9; // 3x3
-const START_BALANCE = 1000000;
+const START_BALANCE = 100;
 
 // Система уровней (6 уровней)
 const LEVEL_THRESHOLDS = [
@@ -92,10 +92,7 @@ const FIELD_UPGRADES = [
   { level: 2, size: 25, cost: 10000 }, // 5x5
   { level: 3, size: 36, cost: 20000 }, // 6x6
   { level: 4, size: 49, cost: 40000 }, // 7x7
-  { level: 5, size: 64, cost: 80000 }, // 8x8
-  { level: 6, size: 81, cost: 160000 }, // 9x9
-  { level: 7, size: 100, cost: 320000 }, // 10x10
-  { level: 8, size: 121, cost: 640000 }, // 11x11
+  { level: 5, size: 64, cost: 80000 }, // 8x8 (МАКСИМУМ)
 ];
 
 function createEmptyField(size: number = FIELD_SIZE): Cell[] {
@@ -136,8 +133,8 @@ export function useGameLogic(tgId?: number) {
       balance: START_BALANCE, 
       tonBalance: 0,
       fieldLevel: 0,
-      level: MAX_LEVEL,
-      xp: 100000,
+      level: 1,
+      xp: 0,
       totalEarned: 0,
       totalSpent: 0,
       seedsPlanted: 0,
@@ -205,7 +202,7 @@ export function useGameLogic(tgId?: number) {
             username: saved.username ?? 'Игрок',
             playerId: saved.playerId ?? generatePlayerId(),
             subscription: saved.subscription ?? 'none',
-          title: (saved as any).title ?? '',
+            title: (saved as any).title ?? '',
             activeCraft: saved.activeCraft ?? null,
             craftDraft: (saved as any).craftDraft ?? null,
             lastDailyClaim: (saved as any).lastDailyClaim,
@@ -679,6 +676,7 @@ export function useGameLogic(tgId?: number) {
 
   return {
     state,
+    isLoading,
     view,
     setView,
     seedsInInventory,

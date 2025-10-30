@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { HYBRID_RECIPES, HybridRecipe, calculateHybridSeedPrice, calculateHybridGrowTime, calculateHybridFruitPrice } from '../data/hybrids';
-import { SEEDS } from '../data/seeds';
-import { FRUITS } from '../data/fruits';
+import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
 import IngredientSelector from './IngredientSelector';
 import CraftSuccessModal from './CraftSuccessModal';
 
@@ -13,6 +12,7 @@ interface Props {
 
 export default function HybridCrafting({ game }: Props) {
   const { state, startCraft, initCraftDraft, addIngredientToCraft, cancelCraftDraft } = game;
+  const [selectedTier, setSelectedTier] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
   const [selectedRecipe, setSelectedRecipe] = useState<HybridRecipe | null>(null);
   const [showIngredientSelector, setShowIngredientSelector] = useState<{ index: number; ingredient: any } | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState<{ name: string; emoji: string } | null>(null);
@@ -30,25 +30,13 @@ export default function HybridCrafting({ game }: Props) {
   // Получаем добавленные ингредиенты из черновика
   const addedIngredients = state.craftDraft?.addedIngredients || [];
 
-  // Ограничения по уровням для крафтов (тирам соответствует максимальная редкость ингредиентов)
-  const rarityToTier: Record<string, number> = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };
-  const allowedTierByLevel: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 };
-  const playerLevel = Math.min(Math.max(state.level, 1), 6);
-  const allowedTier = allowedTierByLevel[playerLevel];
-
-  const getIngredientTier = (ingredient: { id: string; type: 'seed'|'fruit' }) => {
-    if (ingredient.type === 'seed') {
-      const seed: any = SEEDS[ingredient.id as keyof typeof SEEDS];
-      return rarityToTier[seed?.rarity || 'common'] || 1;
-    }
-    // Плоды — берём редкость исходного семени по связке FRUITS <- SEEDS
-    // На практике рецепты чаще используют семена/плоды известных семян
-    const seedFromFruit = Object.values(SEEDS).find((s) => s.fruitId === ingredient.id);
-    return rarityToTier[seedFromFruit?.rarity || 'common'] || 1;
-  };
-
-  const getRecipeTier = (recipe: any) => {
-    return Math.max(...recipe.ingredients.map((ing: any) => getIngredientTier(ing)));
+  // Фильтруем рецепты по выбранному тиру
+  const tierRecipes = HYBRID_RECIPES.filter(r => r.tier === selectedTier);
+  
+  // Проверяем доступность тира для игрока
+  const isTierLocked = (tier: number) => {
+    if (tier === 1) return state.level < 2; // Тир 1 доступен с уровня 2
+    return state.level < tier; // Тир 2 с уровня 2, тир 3 с уровня 3, и т.д.
   };
 
   const handleCloseSuccess = () => {
@@ -124,9 +112,9 @@ export default function HybridCrafting({ game }: Props) {
 
   const getItemInfo = (id: string, type: 'seed' | 'fruit') => {
     if (type === 'seed') {
-      return SEEDS[id as keyof typeof SEEDS];
+      return getSeedInfo(id);
     } else {
-      return FRUITS[id as keyof typeof FRUITS];
+      return getFruitInfo(id);
     }
   };
 
@@ -146,19 +134,29 @@ export default function HybridCrafting({ game }: Props) {
     return colors[rarity as keyof typeof colors] || '#9CA3AF';
   };
 
-  const getRarityOrder = (rarity: string) => {
-    const order = {
-      common: 1,
-      uncommon: 2,
-      rare: 3,
-      epic: 4,
-      legendary: 5
+  const getTierColor = (tier: number) => {
+    const colors = {
+      1: 'bg-gray-100 text-gray-700 border-gray-300',
+      2: 'bg-green-50 text-green-700 border-green-300',
+      3: 'bg-blue-50 text-blue-700 border-blue-300',
+      4: 'bg-purple-50 text-purple-700 border-purple-300',
+      5: 'bg-orange-50 text-orange-700 border-orange-300',
+      6: 'bg-red-50 text-red-700 border-red-300'
     };
-    return order[rarity as keyof typeof order] || 0;
+    return colors[tier as keyof typeof colors] || colors[1];
   };
 
-  // Сортируем рецепты по редкости
-  const sortedRecipes = [...HYBRID_RECIPES].sort((a, b) => getRarityOrder(a.rarity) - getRarityOrder(b.rarity));
+  const getTierActiveColor = (tier: number) => {
+    const colors = {
+      1: 'bg-gray-500 text-white border-gray-700',
+      2: 'bg-green-500 text-white border-green-700',
+      3: 'bg-blue-500 text-white border-blue-700',
+      4: 'bg-purple-500 text-white border-purple-700',
+      5: 'bg-orange-500 text-white border-orange-700',
+      6: 'bg-red-500 text-white border-red-700'
+    };
+    return colors[tier as keyof typeof colors] || colors[1];
+  };
 
   return (
     <div className="max-w-md mx-auto p-3 pb-24">
@@ -166,10 +164,39 @@ export default function HybridCrafting({ game }: Props) {
       
       {!selectedRecipe ? (
         <div className="space-y-3">
-          <div className="text-xs text-gray-600 mb-1">{playerLevel < 2 ? '🔒 Крафт доступен с 2 уровня' : `Доступные гибриды: до ${allowedTier} тира`}</div>
-          {sortedRecipes.map((recipe) => {
-            const tier = getRecipeTier(recipe);
-            const locked = tier > allowedTier || playerLevel < 2;
+          {/* Вкладки тиров */}
+          <div className="grid grid-cols-6 gap-1 mb-3">
+            {[1, 2, 3, 4, 5, 6].map((tier) => {
+              const locked = isTierLocked(tier);
+              const isActive = selectedTier === tier;
+              return (
+                <button
+                  key={tier}
+                  onClick={() => !locked && setSelectedTier(tier as any)}
+                  disabled={locked}
+                  className={`py-2 px-1 rounded-lg border text-xs font-medium transition-all ${
+                    locked 
+                      ? 'bg-gray-200 text-gray-400 border-gray-300 cursor-not-allowed'
+                      : isActive
+                        ? getTierActiveColor(tier)
+                        : getTierColor(tier) + ' hover:opacity-80'
+                  }`}
+                >
+                  {locked ? '🔒' : `T${tier}`}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="text-xs text-center text-gray-600 mb-2">
+            {isTierLocked(selectedTier) 
+              ? `🔒 Тир ${selectedTier} доступен с ${selectedTier === 1 ? 2 : selectedTier} уровня` 
+              : `Тир ${selectedTier} • ${tierRecipes.length} рецептов`
+            }
+          </div>
+
+          {tierRecipes.map((recipe) => {
+            const locked = recipe.requiredLevel > state.level;
             const seedPrice = calculateHybridSeedPrice(recipe.ingredients);
             const growTime = calculateHybridGrowTime(recipe.ingredients);
             const fruitPrice = calculateHybridFruitPrice(recipe.ingredients);
@@ -189,11 +216,11 @@ export default function HybridCrafting({ game }: Props) {
                   </div>
                   <div className="text-xs text-gray-500 mt-1">{recipe.description}</div>
                   <div className="text-xs text-gray-700 mt-1 flex gap-3">
-                    <span>💰 Семя: {seedPrice} $ECO</span>
+                    <span>🌱 Семя: {seedPrice} $ECO</span>
                     <span>⏱ Рост: {growTime}с</span>
                   </div>
                   <div className="text-xs text-green-600 mt-0.5">
-                    🍎 Фрукт продается за: {fruitPrice} $ECO
+                    🍎 Фрукт: {fruitPrice} $ECO
                   </div>
                 </div>
                 <button
@@ -201,7 +228,7 @@ export default function HybridCrafting({ game }: Props) {
                   disabled={locked}
                   className={`px-3 py-2 rounded-xl text-sm font-medium ${locked ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
                 >
-                  {locked ? `🔒 С ${Math.max(2, tier + 1 - 1)} уровня` : 'Выбрать'}
+                  {locked ? `🔒 ${recipe.requiredLevel} ур` : 'Выбрать'}
                 </button>
               </div>
             </div>
