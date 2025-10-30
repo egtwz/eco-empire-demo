@@ -16,7 +16,7 @@ export interface SeedDef {
 }
 
 // Формула времени роста: baseTime * (price / 10) ^ 0.7
-const RARITY_COLORS = {
+export const RARITY_COLORS = {
   common: '#9CA3AF',
   uncommon: '#10B981', 
   rare: '#3B82F6',
@@ -188,5 +188,3 @@ export const SEEDS: Record<SeedId, SeedDef> = {
 };
 
 export const SHOP_ITEMS = Object.values(SEEDS);
-
-export { RARITY_COLORS };

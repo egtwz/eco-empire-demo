@@ -1,6 +1,7 @@
 import { SEEDS } from '../data/seeds';
 import { FRUITS } from '../data/fruits';
 import { HYBRID_RECIPES, calculateHybridSeedPrice, calculateHybridGrowTime, calculateHybridFruitPrice } from '../data/hybrids';
+import { SYNTHESIS_PLANTS } from '../data/synthesis';
 
 // Получение информации о семени (включая гибридные)
 export function getSeedInfo(seedId: string) {
@@ -27,7 +28,7 @@ export function getSeedInfo(seedId: string) {
   return null;
 }
 
-// Получение информации о фрукте (включая гибридные)
+// Получение информации о фрукте (включая гибридные и синтезные)
 export function getFruitInfo(fruitId: string) {
   // Сначала проверяем обычные фрукты
   if (fruitId in FRUITS) {
@@ -45,6 +46,18 @@ export function getFruitInfo(fruitId: string) {
     };
   }
   
+  // Если не найдено, проверяем синтезные фрукты
+  const synthesisPlant = SYNTHESIS_PLANTS.find(p => p.id === fruitId);
+  if (synthesisPlant) {
+    return {
+      id: fruitId,
+      name: synthesisPlant.name,
+      emoji: synthesisPlant.emoji,
+      sellPrice: synthesisPlant.sellPrice
+    };
+  }
+  
   return null;
 }
+
 

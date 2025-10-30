@@ -5,9 +5,10 @@ import { RARITY_COLORS } from '../data/seeds';
 import { getFruitInfo } from '../utils/hybridUtils';
 import ItemActionModal from './ItemActionModal';
 import HybridCrafting from './HybridCrafting';
+import { SYNTHESIS_PLANTS, SYNTHESIS_RECIPES, SynthesisRarity } from '../data/synthesis';
 
 type FilterBy = 'all' | 'seeds' | 'fruits' | 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
-type Tab = 'inventory' | 'crafting';
+type Tab = 'inventory' | 'crafting' | 'synthesis';
 
 export default function Inventory({ game }: { game: ReturnType<typeof useGameLogic> }) {
   const { state, sellFruit } = game;
@@ -15,6 +16,7 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
   const [filterBy, setFilterBy] = useState<FilterBy>('all');
   const [selectedItem, setSelectedItem] = useState<{ id: string; name: string; emoji: string; count: number; type: 'seed' | 'fruit' | 'booster' } | null>(null);
   const [showSellAllModal, setShowSellAllModal] = useState(false);
+  const [showSynthesisPlantsModal, setShowSynthesisPlantsModal] = useState(false);
 
   const filteredInventory = useMemo(() => {
     let items = [...state.inventory];
@@ -132,10 +134,30 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
           <div className="text-lg mb-1">{game.state.level < 2 ? '🔒' : '🔬'}</div>
           <div className="text-xs">Создать гибрид</div>
         </button>
+        <button
+          onClick={() => {
+            if (game.state.level < 2) {
+              alert('🔒 Раздел доступен с 2 уровня');
+              return;
+            }
+            setActiveTab('synthesis');
+          }}
+          disabled={game.state.level < 2}
+          className={`flex-1 py-3 rounded-xl border font-medium transition-all ${
+            activeTab === 'synthesis' 
+              ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white border-indigo-700 shadow-md' 
+              : game.state.level < 2 
+                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+          }`}
+        >
+          <div className="text-lg mb-1">{game.state.level < 2 ? '🔒' : '🧬'}</div>
+          <div className="text-xs">Синтез</div>
+        </button>
       </div>
       {game.state.level < 2 && (
         <div className="text-center text-xs text-gray-500 mb-3">
-          🔒 Раздел "Создать гибрид" доступен с 2 уровня
+          🔒 Разделы "Создать гибрид" и "Синтез" доступны с 2 уровня
         </div>
       )}
 
@@ -218,6 +240,41 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
         <HybridCrafting game={game} />
       )}
 
+      {activeTab === 'synthesis' && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200">
+          <div className="font-semibold text-indigo-800 mb-2">🧬 Синтез на поле</div>
+          <div className="text-sm text-indigo-900 space-y-2">
+            <p><strong>Как работает синтез:</strong></p>
+            <ol className="list-decimal pl-5 space-y-1">
+              <li>На поле должно быть ровно 4 растения, расположенные так, чтобы в центре осталась пустая клетка</li>
+              <li>У вас должен быть уровень 2 или выше</li>
+              <li>Центральная пустая клетка начнёт светиться фиолетовым цветом</li>
+              <li>На ней появится иконка ДНК 🧬 вместо плюсика</li>
+              <li>Нажмите на неё, чтобы открыть меню синтеза</li>
+            </ol>
+            <p className="mt-3"><strong>Пример расположения (позиции a12, a21, a23, a32):</strong></p>
+            <div className="grid grid-cols-3 gap-1 max-w-[150px] mx-auto mt-2">
+              <div className="aspect-square bg-gray-100 border border-gray-300 rounded flex items-center justify-center text-xs"></div>
+              <div className="aspect-square bg-green-100 border border-green-300 rounded flex items-center justify-center text-xs">🌱</div>
+              <div className="aspect-square bg-gray-100 border border-gray-300 rounded flex items-center justify-center text-xs"></div>
+              <div className="aspect-square bg-green-100 border border-green-300 rounded flex items-center justify-center text-xs">🌱</div>
+              <div className="aspect-square bg-purple-200 border-2 border-purple-500 rounded flex items-center justify-center text-xs">🧬</div>
+              <div className="aspect-square bg-green-100 border border-green-300 rounded flex items-center justify-center text-xs">🌱</div>
+              <div className="aspect-square bg-gray-100 border border-gray-300 rounded flex items-center justify-center text-xs"></div>
+              <div className="aspect-square bg-green-100 border border-green-300 rounded flex items-center justify-center text-xs">🌱</div>
+              <div className="aspect-square bg-gray-100 border border-gray-300 rounded flex items-center justify-center text-xs"></div>
+            </div>
+            <p className="mt-3 text-xs opacity-75">💡 Синтез позволяет создавать уникальные растения из определённых комбинаций 4 окружающих растений! Доступны только те гибриды, для которых у вас есть нужные растения вокруг.</p>
+          </div>
+          <button
+            onClick={() => setShowSynthesisPlantsModal(true)}
+            className="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-semibold hover:from-indigo-600 hover:to-purple-600"
+          >
+            🌟 Возможные синтезы
+          </button>
+        </div>
+      )}
+
       {selectedItem && (
         <ItemActionModal
           open={!!selectedItem}
@@ -279,6 +336,85 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
                   Продать все
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Модалка возможных синтезов */}
+      <AnimatePresence>
+        {showSynthesisPlantsModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3"
+            onClick={() => setShowSynthesisPlantsModal(false)}
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+              className="w-full max-w-md bg-white rounded-2xl p-5 shadow-lg max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-lg font-bold mb-3 text-center">🧬 Возможные синтезы</div>
+              <div className="overflow-y-auto flex-1 space-y-2 pr-2">
+                {(() => {
+                  const rarityOrder = { common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4 };
+                  return SYNTHESIS_PLANTS
+                    .sort((a, b) => rarityOrder[a.rarity] - rarityOrder[b.rarity])
+                    .map(plant => {
+                      const recipe = SYNTHESIS_RECIPES.find(r => r.resultId === plant.id);
+                      const isLocked = game.state.level < plant.minLevel;
+                      return (
+                        <div
+                          key={plant.id}
+                          className={`p-3 rounded-xl border-2 bg-white relative ${
+                            isLocked ? 'border-gray-200 opacity-50' : 'border-gray-200'
+                          }`}
+                        >
+                          {isLocked && (
+                            <div className="absolute top-2 right-2 text-xl">🔒</div>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="text-3xl">{plant.emoji}</div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="px-2 py-0.5 rounded text-xs font-medium text-white"
+                                    style={{ backgroundColor: RARITY_COLORS[plant.rarity] }}
+                                  >
+                                    {plant.name}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">{recipe?.description || plant.description}</div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {isLocked ? (
+                                <div className="text-xs text-gray-500">С {plant.minLevel} ур.</div>
+                              ) : (
+                                <>
+                                  <div className="text-sm font-bold text-green-600">{plant.sellPrice.toLocaleString()} $ECO</div>
+                                  <div className="text-xs text-gray-500">Шанс: {plant.successChance}%</div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                })()}
+              </div>
+              <button
+                onClick={() => setShowSynthesisPlantsModal(false)}
+                className="mt-4 w-full py-2.5 rounded-xl bg-purple-500 text-white font-semibold hover:bg-purple-600"
+              >
+                Закрыть
+              </button>
             </motion.div>
           </motion.div>
         )}

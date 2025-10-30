@@ -3,6 +3,7 @@ import { gameAPI } from '../api/gameApi';
 import { SEEDS, SeedId } from '../data/seeds';
 import { FRUITS } from '../data/fruits';
 import { HYBRID_RECIPES } from '../data/hybrids';
+import { SYNTHESIS_PLANTS } from '../data/synthesis';
 import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
 
 export interface Cell {
@@ -10,6 +11,7 @@ export interface Cell {
   seed?: string; // может быть SeedId или гибридное семя
   plantedAt?: number; // epoch ms
   status: 'empty' | 'growing' | 'ready';
+  frozenUntil?: number; // epoch ms - заморожено до этого времени (для синтеза)
 }
 
 export interface InventoryItem {
@@ -49,6 +51,7 @@ export interface GameState {
   } | null;
   lastDailyClaim?: number; // epoch day number (UTC days)
   dailyStreak?: number; // consecutive claim days
+  synthesisActive?: Array<{ cellId: number; plantId: string; startTime: number; willSucceed: boolean }>; // синтез активен
 }
 
 export type View = 'field' | 'shop' | 'inventory' | 'exchange' | 'profile';
@@ -148,7 +151,8 @@ export function useGameLogic(tgId?: number) {
       activeCraft: null,
       craftDraft: null,
       lastDailyClaim: undefined,
-      dailyStreak: 0
+      dailyStreak: 0,
+      synthesisActive: []
     };
   });
 
@@ -206,7 +210,8 @@ export function useGameLogic(tgId?: number) {
             activeCraft: saved.activeCraft ?? null,
             craftDraft: (saved as any).craftDraft ?? null,
             lastDailyClaim: (saved as any).lastDailyClaim,
-            dailyStreak: (saved as any).dailyStreak ?? 0
+            dailyStreak: (saved as any).dailyStreak ?? 0,
+            synthesisActive: (saved as any).synthesisActive ?? []
           });
         }
         setIsLoading(false);
@@ -223,12 +228,18 @@ export function useGameLogic(tgId?: number) {
     }
   }, [state, isLoading, tgId]);
 
+
   // Timer to progress growing cells to ready and update play time
   useEffect(() => {
     const interval = window.setInterval(() => {
       setState((prev) => {
         let changed = false;
         const nextField = prev.field.map((cell) => {
+          // Если клетка заморожена - не даем ей созреть
+          if (cell.frozenUntil && now() < cell.frozenUntil) {
+            return cell;
+          }
+          
           if (cell.status === 'growing' && cell.seed && cell.plantedAt) {
             const seedDef = getSeedInfo(cell.seed);
             if (seedDef) {
@@ -669,10 +680,63 @@ export function useGameLogic(tgId?: number) {
     });
   }, []);
 
+  const addItemToInventory = useCallback((item: { id: string; name: string; type: 'seed' | 'fruit' | 'booster'; emoji: string }, count: number = 1) => {
+    setState(prev => {
+      const existingItem = prev.inventory.find(i => i.id === item.id);
+      let updatedInventory: InventoryItem[];
+      if (existingItem) {
+        updatedInventory = prev.inventory.map(i => 
+          i.id === item.id ? { ...i, count: i.count + count } : i
+        );
+      } else {
+        updatedInventory = [...prev.inventory, { ...item, count }];
+      }
+      return { ...prev, inventory: updatedInventory };
+    });
+  }, []);
+
   const getNextUpgrade = useCallback(() => {
     if (state.fieldLevel >= 8) return null;
     return FIELD_UPGRADES[state.fieldLevel];
   }, [state.fieldLevel]);
+
+  const startSynthesis = useCallback((cellId: number, plantId: string, willSucceed: boolean, gridSize: number) => {
+    setState(prev => {
+      const plant = SYNTHESIS_PLANTS.find(p => p.id === plantId);
+      const synthesisTime = plant ? plant.growSeconds * 1000 : 120000;
+      const frozenUntil = Date.now() + synthesisTime;
+      
+      // Находим соседние клетки и замораживаем их
+      const row = Math.floor(cellId / gridSize);
+      const col = cellId % gridSize;
+      const neighbors = [
+        row > 0 ? cellId - gridSize : null, // вверх
+        row < gridSize - 1 ? cellId + gridSize : null, // вниз
+        col > 0 ? cellId - 1 : null, // влево
+        col < gridSize - 1 ? cellId + 1 : null, // вправо
+      ].filter((id): id is number => id !== null);
+      
+      const nextField = prev.field.map(cell => {
+        if (neighbors.includes(cell.id)) {
+          return { ...cell, frozenUntil };
+        }
+        return cell;
+      });
+      
+      return {
+        ...prev,
+        field: nextField,
+        synthesisActive: [...(prev.synthesisActive || []), { cellId, plantId, startTime: Date.now(), willSucceed }]
+      };
+    });
+  }, []);
+
+  const completeSynthesis = useCallback((cellId: number) => {
+    setState(prev => ({
+      ...prev,
+      synthesisActive: (prev.synthesisActive || []).filter(s => s.cellId !== cellId)
+    }));
+  }, []);
 
   return {
     state,
@@ -708,7 +772,10 @@ export function useGameLogic(tgId?: number) {
     useBoosterSpeedup,
     canClaimDaily,
     claimDaily,
-    buyEcoWithTon
+    buyEcoWithTon,
+    addItemToInventory,
+    startSynthesis,
+    completeSynthesis
     
   } as const;
 }
