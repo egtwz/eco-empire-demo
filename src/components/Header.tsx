@@ -1,7 +1,8 @@
-import { colors } from '../data/colors';
+import { useState } from 'react';
 import TonPlaceholder from './TonPlaceholder';
 import { useGameLogic } from '../hooks/useGameLogic';
-import { gameAPI } from '../api/gameApi';
+import BuyEcoModal from './BuyEcoModal';
+import TonInfoModal from './TonInfoModal';
 
 interface Props {
   balance: number;
@@ -10,7 +11,9 @@ interface Props {
   game: ReturnType<typeof useGameLogic>;
 }
 
-export default function Header({ balance, view, setView, game }: Props) {
+export default function Header({ balance, game }: Props) {
+  const [showBuyEco, setShowBuyEco] = useState(false);
+  const [showTonInfo, setShowTonInfo] = useState(false);
 
   return (
     <>
@@ -20,13 +23,18 @@ export default function Header({ balance, view, setView, game }: Props) {
             <div className="text-lg font-bold text-[var(--primary)] whitespace-nowrap">🌿 EcoEmpire</div>
           </div>
           <div className="flex items-center gap-2 flex-nowrap">
-            <div className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] text-white font-semibold text-sm shadow-md whitespace-nowrap">
+            <TonPlaceholder balance={game.state.tonBalance} onClick={() => setShowTonInfo(true)} />
+            <button 
+              onClick={() => setShowBuyEco(true)}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] text-white font-semibold text-sm shadow-md whitespace-nowrap cursor-pointer hover:opacity-90"
+            >
               {balance} $ECO
-            </div>
-            <TonPlaceholder />
+            </button>
           </div>
         </div>
       </div>
+      <BuyEcoModal open={showBuyEco} onClose={() => setShowBuyEco(false)} game={game} />
+      <TonInfoModal open={showTonInfo} onClose={() => setShowTonInfo(false)} />
     </>
   );
 }

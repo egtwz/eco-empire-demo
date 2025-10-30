@@ -13,13 +13,13 @@ interface Props {
     name: string;
     emoji: string;
     count: number;
-    type: 'seed' | 'fruit';
+    type: 'seed' | 'fruit' | 'booster';
   } | null;
   onClose: () => void;
 }
 
 export default function ItemActionModal({ open, item, onClose, game }: Props & { game: ReturnType<typeof useGameLogic> }) {
-  const { sellFruit, sellSeed } = game;
+  const { sellFruit, sellSeed, useBoosterSpeedup } = game;
   const [showSellModal, setShowSellModal] = useState(false);
   const [showGiftModal, setShowGiftModal] = useState(false);
 
@@ -93,21 +93,33 @@ export default function ItemActionModal({ open, item, onClose, game }: Props & {
               </div>
 
               <div className="space-y-3">
-                <button
-                  onClick={() => setShowSellModal(true)}
-                  className="w-full py-3 rounded-xl bg-green-500 text-white hover:bg-green-600 font-medium flex items-center justify-center gap-2"
-                >
-                  <span>💰</span>
-                  <span>Продать</span>
-                </button>
-                
-                <button
-                  onClick={() => setShowGiftModal(true)}
-                  className="w-full py-3 rounded-xl bg-blue-500 text-white hover:bg-blue-600 font-medium flex items-center justify-center gap-2"
-                >
-                  <span>🎁</span>
-                  <span>Подарить</span>
-                </button>
+                {item.type === 'booster' ? (
+                  <button
+                    onClick={() => { useBoosterSpeedup(); onClose(); }}
+                    className="w-full py-3 rounded-xl bg-purple-500 text-white hover:bg-purple-600 font-medium flex items-center justify-center gap-2"
+                  >
+                    <span>⚡</span>
+                    <span>Использовать</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setShowSellModal(true)}
+                      className="w-full py-3 rounded-xl bg-green-500 text-white hover:bg-green-600 font-medium flex items-center justify-center gap-2"
+                    >
+                      <span>💰</span>
+                      <span>Продать</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => setShowGiftModal(true)}
+                      className="w-full py-3 rounded-xl bg-blue-500 text-white hover:bg-blue-600 font-medium flex items-center justify-center gap-2"
+                    >
+                      <span>🎁</span>
+                      <span>Подарить</span>
+                    </button>
+                  </>
+                )}
               </div>
 
               <button 

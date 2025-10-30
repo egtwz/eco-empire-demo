@@ -13,7 +13,7 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
   const { state, sellFruit } = game;
   const [activeTab, setActiveTab] = useState<Tab>('inventory');
   const [filterBy, setFilterBy] = useState<FilterBy>('all');
-  const [selectedItem, setSelectedItem] = useState<{ id: string; name: string; emoji: string; count: number; type: 'seed' | 'fruit' } | null>(null);
+  const [selectedItem, setSelectedItem] = useState<{ id: string; name: string; emoji: string; count: number; type: 'seed' | 'fruit' | 'booster' } | null>(null);
   const [showSellAllModal, setShowSellAllModal] = useState(false);
 
   const filteredInventory = useMemo(() => {
@@ -189,7 +189,7 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
                         )}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {item.type === 'seed' ? 'Семена' : 'Плоды'} • ×{item.count}
+                        {item.type === 'seed' ? 'Семена' : item.type === 'fruit' ? 'Плоды' : 'Усилители'} • ×{item.count}
                       </div>
                     </div>
                     <div className="text-right">

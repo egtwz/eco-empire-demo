@@ -11,14 +11,35 @@ interface Props {
 }
 
 export default function HybridCrafting({ game }: Props) {
-  const { state, startCraft, completeCraft, getCraftProgress } = game;
+  const { state, startCraft, completeCraft, getCraftProgress, initCraftDraft, addIngredientToCraft, cancelCraftDraft } = game;
   const [selectedRecipe, setSelectedRecipe] = useState<HybridRecipe | null>(null);
-  const [selectedIngredients, setSelectedIngredients] = useState<{ [key: number]: { id: string; count: number } }>({});
   const [showIngredientSelector, setShowIngredientSelector] = useState<{ index: number; ingredient: any } | null>(null);
 
-  // Больше не сохраняем локально
+  // Восстанавливаем черновик только при первой загрузке компонента
+  useEffect(() => {
+    if (state.craftDraft && !selectedRecipe) {
+      const recipe = HYBRID_RECIPES.find(r => r.id === state.craftDraft!.recipeId);
+      if (recipe) {
+        setSelectedRecipe(recipe);
+      }
+    }
+  }, []); // Пустой массив зависимостей - выполняется только один раз при монтировании
+
+  // Получаем добавленные ингредиенты из черновика
+  const addedIngredients = state.craftDraft?.addedIngredients || [];
 
   const craftProgress = getCraftProgress();
+
+  // Защита от белого экрана - если нет прогресса и нет выбранного рецепта, сбрасываем черновик
+  useEffect(() => {
+    if (!craftProgress && !selectedRecipe && state.craftDraft) {
+      // Если есть черновик, но нет активного крафта и выбранного рецепта - восстанавливаем
+      const recipe = HYBRID_RECIPES.find(r => r.id === state.craftDraft!.recipeId);
+      if (recipe) {
+        setSelectedRecipe(recipe);
+      }
+    }
+  }, [craftProgress, selectedRecipe, state.craftDraft]);
 
   // Ограничения по уровням для крафтов (тирам соответствует максимальная редкость ингредиентов)
   const rarityToTier: Record<string, number> = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };
@@ -41,16 +62,16 @@ export default function HybridCrafting({ game }: Props) {
     return Math.max(...recipe.ingredients.map((ing: any) => getIngredientTier(ing)));
   };
 
-  // Проверяем завершение крафта
-  useEffect(() => {
-    if (craftProgress?.isComplete) {
-      completeCraft();
-    }
-  }, [craftProgress, completeCraft]);
+  // Обработчик завершения крафта
+  const handleCompleteCraft = () => {
+    completeCraft();
+    setSelectedRecipe(null); // Возвращаемся к списку рецептов
+  };
 
   const handleRecipeSelect = (recipe: HybridRecipe) => {
     setSelectedRecipe(recipe);
-    setSelectedIngredients({});
+    // Создаём пустой черновик сразу при выборе рецепта
+    initCraftDraft(recipe.id);
   };
 
   const handleIngredientClick = (index: number, ingredient: any) => {
@@ -58,31 +79,43 @@ export default function HybridCrafting({ game }: Props) {
   };
 
   const handleIngredientSelect = (itemId: string, count: number) => {
-    if (showIngredientSelector) {
-      setSelectedIngredients(prev => ({
-        ...prev,
-        [showIngredientSelector.index]: { id: itemId, count }
-      }));
+    if (showIngredientSelector && selectedRecipe) {
+      addIngredientToCraft(
+        selectedRecipe.id,
+        showIngredientSelector.index,
+        itemId,
+        showIngredientSelector.ingredient.type,
+        count
+      );
+      setShowIngredientSelector(null);
     }
+  };
+
+  const handleCancel = () => {
+    cancelCraftDraft();
+    setSelectedRecipe(null);
   };
 
   const canCraft = () => {
     if (!selectedRecipe) return false;
-    return selectedRecipe.ingredients.every((_, index) => selectedIngredients[index]);
+    return selectedRecipe.ingredients.every((ingredient, index) => {
+      const addedIngredient = addedIngredients.find(ing => ing.index === index);
+      // Проверяем что ингредиент добавлен И количество совпадает с требуемым
+      return addedIngredient && addedIngredient.count === ingredient.count;
+    });
   };
 
   const handleCraft = () => {
     if (!selectedRecipe || !canCraft()) return;
     
-    const ingredients = selectedRecipe.ingredients.map((ingredient, index) => ({
-      id: selectedIngredients[index].id,
-      type: ingredient.type,
-      count: selectedIngredients[index].count
+    const ingredients = addedIngredients.map(ing => ({
+      id: ing.id,
+      type: ing.type,
+      count: ing.count
     }));
 
     startCraft(selectedRecipe.id, ingredients);
-    setSelectedRecipe(null);
-    setSelectedIngredients({});
+    // НЕ очищаем selectedRecipe - показываем прогресс крафта
   };
 
   const getItemInfo = (id: string, type: 'seed' | 'fruit') => {
@@ -98,38 +131,30 @@ export default function HybridCrafting({ game }: Props) {
     return item ? item.count : 0;
   };
 
-  if (craftProgress) {
-    return (
-      <div className="max-w-md mx-auto p-3 pb-24">
-        <div className="text-xl font-bold mb-4 text-center">🔬 Создание гибрида</div>
-        
-        <div className="bg-white rounded-2xl p-4 shadow-md">
-          <div className="text-center mb-4">
-            <div className="text-4xl mb-2">{craftProgress.recipe.resultEmoji}</div>
-            <div className="text-lg font-bold">{craftProgress.recipe.resultName}</div>
-            <div className="text-sm text-gray-600">{craftProgress.recipe.description}</div>
-          </div>
+  const getRarityBorderColor = (rarity: string) => {
+    const colors = {
+      common: '#9CA3AF',
+      uncommon: '#10B981',
+      rare: '#3B82F6',
+      epic: '#A855F7',
+      legendary: '#F59E0B'
+    };
+    return colors[rarity as keyof typeof colors] || '#9CA3AF';
+  };
 
-          <div className="mb-4">
-            <div className="flex justify-between text-sm mb-2">
-              <span>Прогресс</span>
-              <span>{Math.round(craftProgress.progress)}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
-              <div 
-                className="bg-blue-500 h-3 rounded-full transition-all duration-300"
-                style={{ width: `${craftProgress.progress}%` }}
-              />
-            </div>
-          </div>
+  const getRarityOrder = (rarity: string) => {
+    const order = {
+      common: 1,
+      uncommon: 2,
+      rare: 3,
+      epic: 4,
+      legendary: 5
+    };
+    return order[rarity as keyof typeof order] || 0;
+  };
 
-          <div className="text-center text-sm text-gray-600">
-            {craftProgress.timeLeft > 0 ? `Осталось: ${craftProgress.timeLeft} сек` : 'Завершено!'}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Сортируем рецепты по редкости
+  const sortedRecipes = [...HYBRID_RECIPES].sort((a, b) => getRarityOrder(a.rarity) - getRarityOrder(b.rarity));
 
   return (
     <div className="max-w-md mx-auto p-3 pb-24">
@@ -138,7 +163,7 @@ export default function HybridCrafting({ game }: Props) {
       {!selectedRecipe ? (
         <div className="space-y-3">
           <div className="text-xs text-gray-600 mb-1">{playerLevel < 2 ? '🔒 Крафт доступен с 2 уровня' : `Доступные гибриды: до ${allowedTier} тира`}</div>
-          {HYBRID_RECIPES.map((recipe) => {
+          {sortedRecipes.map((recipe) => {
             const tier = getRecipeTier(recipe);
             const locked = tier > allowedTier || playerLevel < 2;
             return (
@@ -146,8 +171,15 @@ export default function HybridCrafting({ game }: Props) {
               <div className="flex items-center gap-3 mb-2">
                 <div className="text-2xl">{recipe.resultEmoji}</div>
                 <div className="flex-1">
-                  <div className="text-sm font-medium">{recipe.resultName}</div>
-                  <div className="text-xs text-gray-500">{recipe.description}</div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="px-2 py-0.5 rounded-lg text-sm font-medium text-white"
+                      style={{ backgroundColor: getRarityBorderColor(recipe.rarity) }}
+                    >
+                      {recipe.resultName}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">{recipe.description}</div>
                   <div className="text-xs text-green-600 mt-1">
                     Цена продажи: {recipe.sellPrice} $ECO
                   </div>
@@ -168,66 +200,123 @@ export default function HybridCrafting({ game }: Props) {
           <div className="bg-white rounded-2xl p-4 shadow-md">
             <div className="text-center mb-4">
               <div className="text-3xl mb-2">{selectedRecipe.resultEmoji}</div>
-              <div className="text-lg font-bold">{selectedRecipe.resultName}</div>
-              <div className="text-sm text-gray-600">{selectedRecipe.description}</div>
+              <span
+                className="inline-block px-3 py-1 rounded-lg text-lg font-bold text-white"
+                style={{ backgroundColor: getRarityBorderColor(selectedRecipe.rarity) }}
+              >
+                {selectedRecipe.resultName}
+              </span>
+              <div className="text-sm text-gray-600 mt-2">{selectedRecipe.description}</div>
             </div>
 
             <div className="space-y-3">
               <div className="text-sm font-medium text-gray-700">Ингредиенты:</div>
               {selectedRecipe.ingredients.map((ingredient, index) => {
                 const itemInfo = getItemInfo(ingredient.id, ingredient.type);
-                const selected = selectedIngredients[index];
-                const available = getAvailableCount(ingredient.id, ingredient.type);
+                const addedIngredient = addedIngredients.find(ing => ing.index === index);
+                const addedItemInfo = addedIngredient ? getItemInfo(addedIngredient.id, addedIngredient.type) : null;
+                
+                // Если ингредиент УЖЕ добавлен, не проверяем наличие (его уже нет в инвентаре)
+                // Если НЕ добавлен, проверяем наличие в инвентаре
+                const available = addedIngredient ? 0 : getAvailableCount(ingredient.id, ingredient.type);
                 const displayEmoji = itemInfo?.emoji;
                 
                 return (
                   <div key={index} className="flex items-center gap-3 p-2 rounded-xl bg-gray-50">
                     <div className="text-2xl">
-                      {selected ? (
-                        itemInfo?.emoji
+                      {addedIngredient ? (
+                        addedItemInfo?.emoji
                       ) : (
                         <div className="opacity-30">{displayEmoji || (ingredient.type === 'seed' ? '🌱' : '🍎')}</div>
                       )}
                     </div>
                     <div className="flex-1">
                       <div className="text-sm font-medium">
-                        {selected ? itemInfo?.name : `${itemInfo?.name || ingredient.id} (нужно)`}
+                        {addedIngredient 
+                          ? `${addedItemInfo?.name} (${addedIngredient.count}/${ingredient.count} шт)` 
+                          : `${itemInfo?.name || ingredient.id} (нужно ${ingredient.count} шт)`
+                        }
                       </div>
-                      <div className="text-xs text-gray-500">
-                        Нужно: {ingredient.count} шт • В наличии: {available} шт
+                      <div className={`text-xs ${addedIngredient ? (addedIngredient.count === ingredient.count ? 'text-green-600' : 'text-orange-600') : 'text-gray-500'}`}>
+                        {addedIngredient 
+                          ? (addedIngredient.count === ingredient.count ? '✓ Полностью добавлено' : `⚠ Нужно ещё ${ingredient.count - addedIngredient.count} шт`)
+                          : `В наличии: ${available} шт`
+                        }
                       </div>
                     </div>
                     <button
                       onClick={() => handleIngredientClick(index, ingredient)}
-                      disabled={available === 0}
+                      disabled={(addedIngredient && addedIngredient.count === ingredient.count) || available === 0 || !!craftProgress}
                       className={`px-3 py-1 rounded-lg text-xs font-medium ${
-                        selected 
-                          ? 'bg-green-500 text-white' 
+                        addedIngredient 
+                          ? (addedIngredient.count === ingredient.count 
+                              ? 'bg-green-500 text-white cursor-default' 
+                              : 'bg-blue-500 text-white hover:bg-blue-600')
                           : available > 0 
                             ? 'bg-blue-500 text-white hover:bg-blue-600' 
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       }`}
                     >
-                      {selected ? '✓ Выбрано' : 'Выбрать'}
+                      {addedIngredient 
+                        ? (addedIngredient.count === ingredient.count ? '✓ Готово' : 'Выбрать')
+                        : 'Выбрать'
+                      }
                     </button>
                   </div>
                 );
               })}
             </div>
 
+            {/* Прогресс бар если крафт начат */}
+            {craftProgress && (
+              <div className="mt-4">
+                <div className="mb-2">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-600">Прогресс крафта</span>
+                    <span className="font-semibold text-blue-600">{Math.round(craftProgress.progress)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div 
+                      className="bg-blue-500 h-3 rounded-full transition-all duration-300"
+                      style={{ width: `${craftProgress.progress}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="text-center text-sm text-gray-600 mb-3">
+                  {craftProgress.timeLeft > 0 ? `Осталось: ${craftProgress.timeLeft} сек` : '✅ Готово!'}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2 mt-4">
               <button
-                onClick={() => setSelectedRecipe(null)}
-                className="flex-1 py-2 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium"
+                onClick={handleCancel}
+                disabled={!!craftProgress}
+                className={`flex-1 py-2 rounded-xl font-medium ${
+                  craftProgress 
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
               >
-                Назад
+                Отменить
               </button>
               <button
-                onClick={handleCraft}
-                disabled={!canCraft()}
-                className="flex-1 py-2 rounded-xl bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                onClick={craftProgress?.isComplete ? handleCompleteCraft : handleCraft}
+                disabled={craftProgress ? !craftProgress.isComplete : !canCraft()}
+                className={`flex-1 py-2 rounded-xl font-medium text-white ${
+                  craftProgress 
+                    ? (craftProgress.isComplete 
+                        ? 'bg-green-500 hover:bg-green-600' 
+                        : 'bg-gray-400 cursor-not-allowed')
+                    : (canCraft() 
+                        ? 'bg-green-500 hover:bg-green-600' 
+                        : 'bg-gray-400 cursor-not-allowed')
+                }`}
               >
-                Создать
+                {craftProgress 
+                  ? (craftProgress.isComplete ? 'Забрать' : `Крафтится... ${craftProgress.timeLeft} сек`)
+                  : 'Начать крафт'
+                }
               </button>
             </div>
           </div>

@@ -13,7 +13,7 @@ export interface Cell {
 export interface InventoryItem {
   id: string; // seedId or fruitId
   name: string;
-  type: 'seed' | 'fruit';
+  type: 'seed' | 'fruit' | 'booster';
   emoji: string;
   count: number;
 }
@@ -22,7 +22,8 @@ export interface GameState {
   field: Cell[];
   inventory: InventoryItem[];
   balance: number;
-  fieldLevel: number; // 0=5x5, 1=6x6, 2=7x7, 3=8x8
+  tonBalance: number;
+  fieldLevel: number; // 0=3x3, 1=4x4, 2=5x5, 3=6x6, 4=7x7, 5=8x8, 6=9x9, 7=10x10, 8=11x11
   level: number; // 1-10
   xp: number;
   totalEarned: number;
@@ -40,12 +41,18 @@ export interface GameState {
     startTime: number;
     ingredients: { id: string; type: 'seed' | 'fruit'; count: number }[];
   } | null;
+  craftDraft?: {
+    recipeId: string;
+    addedIngredients: { index: number; id: string; type: 'seed' | 'fruit'; count: number }[];
+  } | null;
+  lastDailyClaim?: number; // epoch day number (UTC days)
+  dailyStreak?: number; // consecutive claim days
 }
 
 export type View = 'field' | 'shop' | 'inventory' | 'exchange' | 'profile';
 
-const FIELD_SIZE = 25; // 5x5
-const START_BALANCE = 100;
+const FIELD_SIZE = 9; // 3x3
+const START_BALANCE = 1000000;
 
 // Система уровней (6 уровней)
 const LEVEL_THRESHOLDS = [
@@ -79,9 +86,14 @@ function generatePlayerId(): string {
 }
 
 const FIELD_UPGRADES = [
-  { level: 1, size: 36, cost: 10000 }, // 6x6
-  { level: 2, size: 49, cost: 100000 }, // 7x7
-  { level: 3, size: 64, cost: 10000000 }, // 8x8
+  { level: 1, size: 16, cost: 5000 }, // 4x4
+  { level: 2, size: 25, cost: 10000 }, // 5x5
+  { level: 3, size: 36, cost: 20000 }, // 6x6
+  { level: 4, size: 49, cost: 40000 }, // 7x7
+  { level: 5, size: 64, cost: 80000 }, // 8x8
+  { level: 6, size: 81, cost: 160000 }, // 9x9
+  { level: 7, size: 100, cost: 320000 }, // 10x10
+  { level: 8, size: 121, cost: 640000 }, // 11x11
 ];
 
 function createEmptyField(size: number = FIELD_SIZE): Cell[] {
@@ -120,9 +132,10 @@ export function useGameLogic(tgId?: number) {
       field: createEmptyField(), 
       inventory: [], 
       balance: START_BALANCE, 
+      tonBalance: 0,
       fieldLevel: 0,
-      level: 1,
-      xp: 0,
+      level: MAX_LEVEL,
+      xp: 100000,
       totalEarned: 0,
       totalSpent: 0,
       seedsPlanted: 0,
@@ -133,7 +146,10 @@ export function useGameLogic(tgId?: number) {
       playerId: generatePlayerId(),
       subscription: 'none',
       title: '',
-      activeCraft: null
+      activeCraft: null,
+      craftDraft: null,
+      lastDailyClaim: undefined,
+      dailyStreak: 0
     };
   });
 
@@ -150,19 +166,28 @@ export function useGameLogic(tgId?: number) {
       gameAPI.getUserData().then(saved => {
         if (saved) {
           const fieldLevel = saved.fieldLevel ?? 0;
-          const restoredField: Cell[] = (saved.field as Cell[]).map((cell) => {
-            if (cell.status === 'growing' && cell.seed && cell.plantedAt) {
-              const growMs = SEEDS[cell.seed].growSeconds * 1000;
-              if (now() - cell.plantedAt >= growMs) {
-                return { ...cell, status: 'ready' as const };
+          const expectedSize = fieldLevel === 0 ? FIELD_SIZE : FIELD_UPGRADES[fieldLevel - 1].size;
+          let restoredField: Cell[] = saved.field as Cell[];
+          
+          // Если размер поля изменился, пересоздаем поле
+          if (restoredField.length !== expectedSize) {
+            restoredField = createEmptyField(expectedSize);
+          } else {
+            restoredField = restoredField.map((cell) => {
+              if (cell.status === 'growing' && cell.seed && cell.plantedAt) {
+                const growMs = SEEDS[cell.seed].growSeconds * 1000;
+                if (now() - cell.plantedAt >= growMs) {
+                  return { ...cell, status: 'ready' as const };
+                }
               }
-            }
-            return cell;
-          });
+              return cell;
+            });
+          }
           setState({ 
             field: restoredField, 
             inventory: saved.inventory || [], 
             balance: saved.balance ?? START_BALANCE, 
+            tonBalance: (saved as any).tonBalance ?? 0,
             fieldLevel: fieldLevel,
             level: saved.level ?? 1,
             xp: saved.xp ?? 0,
@@ -176,7 +201,10 @@ export function useGameLogic(tgId?: number) {
             playerId: saved.playerId ?? generatePlayerId(),
             subscription: saved.subscription ?? 'none',
           title: (saved as any).title ?? '',
-            activeCraft: saved.activeCraft ?? null
+            activeCraft: saved.activeCraft ?? null,
+            craftDraft: (saved as any).craftDraft ?? null,
+            lastDailyClaim: (saved as any).lastDailyClaim,
+            dailyStreak: (saved as any).dailyStreak ?? 0
           });
         }
         setIsLoading(false);
@@ -219,6 +247,7 @@ export function useGameLogic(tgId?: number) {
 
   const seedsInInventory = useMemo(() => state.inventory.filter((i) => i.type === 'seed' && i.count > 0), [state.inventory]);
   const fruitsInInventory = useMemo(() => state.inventory.filter((i) => i.type === 'fruit' && i.count > 0), [state.inventory]);
+  const boostersInInventory = useMemo(() => state.inventory.filter((i) => i.type === 'booster' && i.count > 0), [state.inventory]);
 
   const openSeedModal = useCallback((cellId: number) => {
     setSeedSelectForCell(cellId);
@@ -356,7 +385,7 @@ export function useGameLogic(tgId?: number) {
   const upgradeField = useCallback(() => {
     setState((prev) => {
       const nextLevel = prev.fieldLevel + 1;
-      if (nextLevel > 3) return prev; // Максимальный уровень
+      if (nextLevel > 8) return prev; // Максимальный уровень (11x11)
       const upgrade = FIELD_UPGRADES[nextLevel - 1];
       if (prev.balance < upgrade.cost) return prev;
       
@@ -371,11 +400,96 @@ export function useGameLogic(tgId?: number) {
     });
   }, []);
 
+  // Boosters
+  const addBooster = useCallback((id: 'booster_speedup', count: number) => {
+    setState(prev => {
+      const fallback: InventoryItem = { id, type: 'booster', name: 'Ускоритель роста', emoji: '⚡', count: 0 };
+      const nextInv = addCount(prev.inventory, id, count, fallback);
+      return { ...prev, inventory: nextInv };
+    });
+  }, []);
+
+  const useBoosterSpeedup = useCallback(() => {
+    setState(prev => {
+      const inv = getItem(prev.inventory, 'booster_speedup');
+      if (!inv || inv.count <= 0) return prev;
+      // find first growing cell
+      const idx = prev.field.findIndex(c => c.status === 'growing');
+      if (idx === -1) return prev; // nothing to speed up
+      const nextField = prev.field.map(c => c);
+      nextField[idx] = { id: nextField[idx].id, seed: nextField[idx].seed, status: 'ready' as const };
+      const nextInv = addCount(prev.inventory, 'booster_speedup', -1, { id: 'booster_speedup', type: 'booster', name: 'Ускоритель роста', emoji: '⚡', count: 0 });
+      return { ...prev, field: nextField, inventory: nextInv };
+    });
+  }, []);
+
+  // Daily rewards
+  const getTodayDayNumber = () => Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+  const canClaimDaily = useCallback(() => {
+    const today = getTodayDayNumber();
+    return state.lastDailyClaim !== today;
+  }, [state.lastDailyClaim]);
+
+  const claimDaily = useCallback((plan?: { eco?: number; boosters?: number; seedRarity?: 'common'|'uncommon'|'rare'|'epic'|'legendary' }) => {
+    setState(prev => {
+      const today = getTodayDayNumber();
+      if (prev.lastDailyClaim === today) return prev;
+      const yesterday = today - 1;
+      const nextStreak = prev.lastDailyClaim === yesterday ? (prev.dailyStreak ?? 0) + 1 : 1;
+
+      const eco = plan?.eco ?? 50;
+      const boosters = plan?.boosters ?? 1;
+      const rarity = plan?.seedRarity ?? 'common';
+
+      const seedKeys = Object.keys(SEEDS) as (keyof typeof SEEDS)[];
+      const seedsByRarity = seedKeys.filter(k => SEEDS[k].rarity === rarity);
+      const randomSeed = seedsByRarity[Math.floor(Math.random() * seedsByRarity.length)] ?? seedKeys[0];
+
+      let nextInv = prev.inventory;
+      if (boosters > 0) {
+        nextInv = addCount(nextInv, 'booster_speedup', boosters, { id: 'booster_speedup', type: 'booster', name: 'Ускоритель роста', emoji: '⚡', count: 0 });
+      }
+      nextInv = addCount(nextInv, randomSeed, 1, { id: randomSeed, type: 'seed', name: SEEDS[randomSeed].name, emoji: SEEDS[randomSeed].emoji, count: 0 });
+
+      return { ...prev, balance: prev.balance + eco, inventory: nextInv, lastDailyClaim: today, dailyStreak: nextStreak };
+    });
+  }, []);
+
+  // Fortune Wheel helpers
+  const addWheelSpins = useCallback((n: number) => {
+    setState(prev => ({ ...prev, wheelSpins: Math.max(0, (prev.wheelSpins ?? 0) + n) }));
+  }, []);
+
+  const grantReward = useCallback((reward: { type: 'eco'|'booster'|'seed'; amount?: number; seedId?: string; seedRarity?: 'common'|'uncommon'|'rare'|'epic'|'legendary' }) => {
+    setState(prev => {
+      if (reward.type === 'eco') {
+        const gain = reward.amount ?? 0;
+        return { ...prev, balance: prev.balance + gain, totalEarned: prev.totalEarned + gain };
+      }
+      if (reward.type === 'booster') {
+        const amt = reward.amount ?? 1;
+        const nextInv = addCount(prev.inventory, 'booster_speedup', amt, { id: 'booster_speedup', type: 'booster', name: 'Ускоритель роста', emoji: '⚡', count: 0 });
+        return { ...prev, inventory: nextInv };
+      }
+      // seed
+      const rarity = reward.seedRarity ?? 'common';
+      const seedKeys = Object.keys(SEEDS) as (keyof typeof SEEDS)[];
+      const candidates = seedKeys.filter(k => SEEDS[k].rarity === rarity);
+      const sid = reward.seedId ?? (candidates[Math.floor(Math.random() * Math.max(1, candidates.length))] || seedKeys[0]);
+      const def = SEEDS[sid as keyof typeof SEEDS];
+      const nextInv = addCount(prev.inventory, sid, reward.amount ?? 1, { id: sid, type: 'seed', name: def.name, emoji: def.emoji, count: 0 });
+      return { ...prev, inventory: nextInv };
+    });
+  }, []);
+
+
+
   const clearProgress = useCallback(() => {
     setState({ 
       field: createEmptyField(), 
       inventory: [], 
       balance: START_BALANCE, 
+      tonBalance: 0,
       fieldLevel: 0,
       level: 1,
       xp: 0,
@@ -389,7 +503,10 @@ export function useGameLogic(tgId?: number) {
       playerId: generatePlayerId(),
       subscription: 'none',
       title: '',
-      activeCraft: null
+      activeCraft: null,
+      craftDraft: null,
+      lastDailyClaim: undefined,
+      dailyStreak: 0
     });
   }, []);
 
@@ -409,6 +526,66 @@ export function useGameLogic(tgId?: number) {
     return { currentLevel, currentXP, requiredXP, progress };
   }, [state.level, state.xp]);
 
+  const initCraftDraft = useCallback((recipeId: string) => {
+    setState(prev => ({
+      ...prev,
+      craftDraft: {
+        recipeId,
+        addedIngredients: []
+      }
+    }));
+  }, []);
+
+  const addIngredientToCraft = useCallback((recipeId: string, index: number, ingredientId: string, ingredientType: 'seed' | 'fruit', count: number) => {
+    setState(prev => {
+      // Удаляем из инвентаря
+      let newInventory = addCount(prev.inventory, ingredientId, -count, {
+        id: ingredientId,
+        type: ingredientType,
+        name: ingredientType === 'seed' ? SEEDS[ingredientId as keyof typeof SEEDS]?.name || 'Unknown' : FRUITS[ingredientId as keyof typeof FRUITS]?.name || 'Unknown',
+        emoji: ingredientType === 'seed' ? SEEDS[ingredientId as keyof typeof SEEDS]?.emoji || '❓' : FRUITS[ingredientId as keyof typeof FRUITS]?.emoji || '❓',
+        count: 0
+      });
+
+      // Добавляем в черновик
+      const existingDraft = prev.craftDraft?.recipeId === recipeId ? prev.craftDraft : { recipeId, addedIngredients: [] };
+      const filteredIngredients = existingDraft.addedIngredients.filter(i => i.index !== index);
+      
+      return {
+        ...prev,
+        inventory: newInventory,
+        craftDraft: {
+          recipeId,
+          addedIngredients: [...filteredIngredients, { index, id: ingredientId, type: ingredientType, count }]
+        }
+      };
+    });
+  }, []);
+
+  const cancelCraftDraft = useCallback(() => {
+    setState(prev => {
+      if (!prev.craftDraft) return prev;
+
+      // Возвращаем все ингредиенты в инвентарь
+      let newInventory = [...prev.inventory];
+      prev.craftDraft.addedIngredients.forEach(ingredient => {
+        newInventory = addCount(newInventory, ingredient.id, ingredient.count, {
+          id: ingredient.id,
+          type: ingredient.type,
+          name: ingredient.type === 'seed' ? SEEDS[ingredient.id as keyof typeof SEEDS]?.name || 'Unknown' : FRUITS[ingredient.id as keyof typeof FRUITS]?.name || 'Unknown',
+          emoji: ingredient.type === 'seed' ? SEEDS[ingredient.id as keyof typeof SEEDS]?.emoji || '❓' : FRUITS[ingredient.id as keyof typeof FRUITS]?.emoji || '❓',
+          count: 0
+        });
+      });
+
+      return {
+        ...prev,
+        inventory: newInventory,
+        craftDraft: null
+      };
+    });
+  }, []);
+
   const startCraft = useCallback((recipeId: string, ingredients: { id: string; type: 'seed' | 'fruit'; count: number }[]) => {
     setState(prev => ({
       ...prev,
@@ -416,7 +593,8 @@ export function useGameLogic(tgId?: number) {
         recipeId,
         startTime: now(),
         ingredients
-      }
+      },
+      craftDraft: null
     }));
   }, []);
 
@@ -428,20 +606,8 @@ export function useGameLogic(tgId?: number) {
       const recipe = HYBRID_RECIPES.find((r: any) => r.id === prev.activeCraft!.recipeId);
       if (!recipe) return prev;
 
-      // Удаляем ингредиенты из инвентаря
-      let newInventory = [...prev.inventory];
-      prev.activeCraft.ingredients.forEach(ingredient => {
-        newInventory = addCount(newInventory, ingredient.id, -ingredient.count, {
-          id: ingredient.id,
-          type: ingredient.type,
-          name: ingredient.type === 'seed' ? SEEDS[ingredient.id as keyof typeof SEEDS]?.name || 'Unknown' : FRUITS[ingredient.id as keyof typeof FRUITS]?.name || 'Unknown',
-          emoji: ingredient.type === 'seed' ? SEEDS[ingredient.id as keyof typeof SEEDS]?.emoji || '❓' : FRUITS[ingredient.id as keyof typeof FRUITS]?.emoji || '❓',
-          count: 0,
-        });
-      });
-
-      // Добавляем результат в инвентарь
-      newInventory = addCount(newInventory, recipe.resultId, 1, {
+      // Ингредиенты уже удалены при добавлении в крафт, только добавляем результат
+      const newInventory = addCount(prev.inventory, recipe.resultId, 1, {
         id: recipe.resultId,
         type: 'fruit',
         name: recipe.resultName,
@@ -479,11 +645,18 @@ export function useGameLogic(tgId?: number) {
   }, []);
 
   const getCurrentFieldSize = useCallback(() => {
-    return state.fieldLevel === 0 ? 25 : FIELD_UPGRADES[state.fieldLevel - 1].size;
+    return state.fieldLevel === 0 ? FIELD_SIZE : FIELD_UPGRADES[state.fieldLevel - 1].size;
   }, [state.fieldLevel]);
+  
+  const buyEcoWithTon = useCallback((ecoAmount: number, tonCost: number) => {
+    setState(prev => {
+      if (prev.tonBalance < tonCost) return prev;
+      return { ...prev, tonBalance: prev.tonBalance - tonCost, balance: prev.balance + ecoAmount };
+    });
+  }, []);
 
   const getNextUpgrade = useCallback(() => {
-    if (state.fieldLevel >= 3) return null;
+    if (state.fieldLevel >= 8) return null;
     return FIELD_UPGRADES[state.fieldLevel];
   }, [state.fieldLevel]);
 
@@ -493,6 +666,7 @@ export function useGameLogic(tgId?: number) {
     setView,
     seedsInInventory,
     fruitsInInventory,
+    boostersInInventory,
     openSeedModal,
     closeSeedModal,
     seedSelectForCell,
@@ -509,9 +683,18 @@ export function useGameLogic(tgId?: number) {
     updateUsername,
     updateTitle,
     getLevelProgress,
+    initCraftDraft,
+    addIngredientToCraft,
+    cancelCraftDraft,
     startCraft,
     completeCraft,
     getCraftProgress,
+    addBooster,
+    useBoosterSpeedup,
+    canClaimDaily,
+    claimDaily,
+    buyEcoWithTon
+    
   } as const;
 }
 

@@ -15,6 +15,7 @@ export interface HybridRecipe {
   resultEmoji: string;
   sellPrice: number;
   craftTime: number; // в секундах
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 }
 
 export const HYBRID_RECIPES: HybridRecipe[] = [
@@ -31,8 +32,9 @@ export const HYBRID_RECIPES: HybridRecipe[] = [
     resultId: 'golden_apple',
     resultName: 'Золотое яблоко',
     resultEmoji: '🍎',
-    sellPrice: 1500, // 3x от суммы ингредиентов
-    craftTime: 10
+    sellPrice: 1500,
+    craftTime: 10,
+    rarity: 'epic'
   },
   {
     id: 'rainbow_rose',
@@ -48,7 +50,8 @@ export const HYBRID_RECIPES: HybridRecipe[] = [
     resultName: 'Радужная роза',
     resultEmoji: '🌹',
     sellPrice: 900,
-    craftTime: 10
+    craftTime: 10,
+    rarity: 'rare'
   },
   {
     id: 'crystal_cactus',
@@ -64,7 +67,8 @@ export const HYBRID_RECIPES: HybridRecipe[] = [
     resultName: 'Кристальный кактус',
     resultEmoji: '🌵',
     sellPrice: 1200,
-    craftTime: 10
+    craftTime: 10,
+    rarity: 'rare'
   },
   {
     id: 'mystic_vine',
@@ -80,7 +84,8 @@ export const HYBRID_RECIPES: HybridRecipe[] = [
     resultName: 'Мистическая лоза',
     resultEmoji: '🍇',
     sellPrice: 6000,
-    craftTime: 10
+    craftTime: 10,
+    rarity: 'legendary'
   },
   {
     id: 'forest_guardian',
@@ -96,7 +101,8 @@ export const HYBRID_RECIPES: HybridRecipe[] = [
     resultName: 'Лесной страж',
     resultEmoji: '🌲',
     sellPrice: 1800,
-    craftTime: 10
+    craftTime: 10,
+    rarity: 'epic'
   },
   {
     id: 'cosmic_flower',
@@ -112,7 +118,8 @@ export const HYBRID_RECIPES: HybridRecipe[] = [
     resultName: 'Космический цветок',
     resultEmoji: '🌸',
     sellPrice: 1050,
-    craftTime: 10
+    craftTime: 10,
+    rarity: 'uncommon'
   }
 ];
 

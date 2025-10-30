@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { motion, AnimatePresence } from 'framer-motion';
+import LevelDisplay from './LevelDisplay';
 
 export default function Profile({ game }: { game: ReturnType<typeof useGameLogic> }) {
   const { state, updateUsername, updateTitle } = game;
@@ -81,6 +82,17 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Уровень */}
+      <div className="mb-4">
+        <LevelDisplay
+          level={game.getLevelProgress().currentLevel}
+          xp={game.getLevelProgress().currentXP}
+          requiredXP={game.getLevelProgress().requiredXP}
+          progress={game.getLevelProgress().progress}
+          onInfoClick={() => {}}
+        />
       </div>
 
       {/* Подписка */}

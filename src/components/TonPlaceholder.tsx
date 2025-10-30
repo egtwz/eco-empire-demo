@@ -1,6 +1,11 @@
-export default function TonPlaceholder() {
+export default function TonPlaceholder({ balance, onClick }: { balance: number; onClick: () => void }) {
   return (
-    <button className="px-3 py-1.5 rounded-xl bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600 whitespace-nowrap">Подключить TON</button>
+    <button 
+      onClick={onClick}
+      className="px-3 py-1.5 rounded-xl bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600 whitespace-nowrap cursor-pointer"
+    >
+      {balance} TON
+    </button>
   );
 }
 
