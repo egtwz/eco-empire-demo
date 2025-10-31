@@ -31,6 +31,39 @@ declare global {
   }
 }
 
+function extractInitDataFromLocation(): string | null {
+  try {
+    const candidates = [window.location.hash, window.location.search];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const source = candidate.startsWith('#') || candidate.startsWith('?')
+        ? candidate.slice(1)
+        : candidate;
+      if (!source) continue;
+      const params = new URLSearchParams(source);
+      const tgData = params.get('tgWebAppData');
+      if (tgData) {
+        return decodeURIComponent(tgData);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to parse tgWebAppData from URL', error);
+  }
+  return null;
+}
+
+function parseUserFromInitData(raw: string): TelegramUser | null {
+  try {
+    const params = new URLSearchParams(raw);
+    const userParam = params.get('user');
+    if (!userParam) return null;
+    return JSON.parse(userParam) as TelegramUser;
+  } catch (error) {
+    console.error('Failed to parse user from initData', error);
+    return null;
+  }
+}
+
 export function useTelegram() {
   const [user, setUser] = useState<TelegramUser | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -44,7 +77,10 @@ export function useTelegram() {
           window.Telegram.WebApp.expand();
           
           const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
-          const rawInitData = window.Telegram.WebApp.initData || null;
+          let rawInitData = window.Telegram.WebApp.initData || null;
+          if (!rawInitData) {
+            rawInitData = extractInitDataFromLocation();
+          }
           if (rawInitData) {
             setInitData(rawInitData);
           }
@@ -66,6 +102,26 @@ export function useTelegram() {
       setIsReady(true);
     }
   }, []);
+
+  // В некоторых клиентах initData передаётся только через URL — обрабатываем его отдельно
+  useEffect(() => {
+    if (!initData) {
+      const hashData = extractInitDataFromLocation();
+      if (hashData) {
+        setInitData(hashData);
+      }
+    }
+  }, [initData]);
+
+  // Если пользователь не получен напрямую, пытаемся извлечь его из initData
+  useEffect(() => {
+    if (!user && initData) {
+      const parsedUser = parseUserFromInitData(initData);
+      if (parsedUser) {
+        setUser(parsedUser);
+      }
+    }
+  }, [user, initData]);
 
   const sendData = (data: any) => {
     if (window.Telegram?.WebApp) {

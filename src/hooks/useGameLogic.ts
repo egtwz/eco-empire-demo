@@ -248,15 +248,23 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
   }, [tgId, initData]);
 
   // Persist on changes locally
+  const saveSignature = useMemo(() => {
+    const { playTime, ...rest } = state;
+    return JSON.stringify(rest);
+  }, [state]);
+
   useEffect(() => {
     if (isLoading || !tgId) return;
 
+    const snapshot = state;
     const timeout = window.setTimeout(() => {
-      gameAPI.saveUserData(state);
+      gameAPI.saveUserData(snapshot);
     }, 1500);
 
-    return () => window.clearTimeout(timeout);
-  }, [state, isLoading, tgId]);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [saveSignature, isLoading, tgId]);
 
 
   // Timer to progress growing cells to ready and update play time

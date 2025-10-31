@@ -81,14 +81,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
-      {import.meta.env.DEV && (
-        <div className="fixed bottom-2 left-2 z-50 max-w-xs rounded-xl bg-black/70 text-white text-xs px-3 py-2 space-y-1">
-          <div className="font-semibold">DEBUG</div>
-          <div>Telegram ready: {telegramReady ? 'yes' : 'no'}</div>
-          <div>Telegram ID: {telegramUser?.id ?? '—'}</div>
-          <div>Init data: {initData ? `${initData.slice(0, 60)}…` : 'missing'}</div>
-        </div>
-      )}
+      <div className="fixed bottom-2 left-2 z-50 max-w-xs rounded-xl bg-black/80 text-white text-xs px-3 py-2 space-y-1 font-mono">
+        <div className="font-semibold">user.id: {telegramUser?.id ?? '—'}</div>
+        <div className="border-t border-white/20 pt-1 text-[10px] max-h-40 overflow-y-auto" id="debug-log"></div>
+      </div>
       <Header balance={game.state.balance} view={game.view} setView={game.setView} game={game} />
       
       {/* Контент с отступом сверху и снизу */}

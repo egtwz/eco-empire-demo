@@ -2,6 +2,17 @@ import { GameState } from '../hooks/useGameLogic';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
+function appendDebugLog(message: string, data?: unknown) {
+  if (typeof window === 'undefined') return;
+  const container = document.getElementById('debug-log');
+  if (!container) return;
+
+  const timestamp = new Date().toLocaleTimeString();
+  const text = data ? `${message} ${JSON.stringify(data)}` : message;
+  container.textContent = `${container.textContent ? container.textContent + '\n' : ''}[${timestamp}] ${text}`;
+  container.scrollTop = container.scrollHeight;
+}
+
 class GameAPI {
   private tgId: number | null = null;
   private initData: string | null = null;
@@ -106,6 +117,14 @@ class GameAPI {
     const updatedAt = Date.now();
     this.persistLocal(gameState, updatedAt);
 
+    const startPayload = {
+      tgId: this.tgId,
+      hasInitData: !!this.initData,
+      updatedAt,
+    };
+    console.log('[gameAPI] saveUserData start', startPayload);
+    appendDebugLog('[save start]', startPayload);
+
     try {
       const payload: any = {
         save_data: gameState,
@@ -116,11 +135,29 @@ class GameAPI {
         payload.last_client_known = this.lastServerUpdatedAt;
       }
 
-      const response = await fetch(this.getSaveUrl(), {
+      const url = this.getSaveUrl();
+      const headers = this.buildHeaders({ 'Content-Type': 'application/json' });
+      const body = JSON.stringify(payload);
+
+      appendDebugLog('[save request]', { url, headers, body });
+
+      const response = await fetch(url, {
         method: 'PUT',
-        headers: this.buildHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(payload),
+        headers,
+        body,
       });
+
+      let errorText: string | undefined;
+      if (!response.ok) {
+        try {
+          errorText = await response.text();
+        } catch (error) {
+          errorText = String(error);
+        }
+      }
+
+      console.log('[gameAPI] saveUserData response', response.status, errorText);
+      appendDebugLog('[save response]', { status: response.status, body: errorText });
 
       if (response.status === 409) {
         const conflict = await response.json();
