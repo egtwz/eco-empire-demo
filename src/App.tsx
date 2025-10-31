@@ -6,6 +6,7 @@ import Inventory from './components/Inventory';
 import Shop from './components/Shop';
 import Exchange from './components/Exchange';
 import Profile from './components/Profile';
+import BoosterNotificationModal from './components/BoosterNotificationModal';
 import { useGameLogic } from './hooks/useGameLogic';
 import './styles.css';
 
@@ -104,6 +105,11 @@ export default function App() {
       </div>
 
       <Navigation view={game.view} setView={game.setView} />
+
+      <BoosterNotificationModal
+        notification={game.boosterNotification}
+        onClose={game.clearBoosterNotification}
+      />
     </div>
   );
 }

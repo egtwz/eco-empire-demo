@@ -4,6 +4,7 @@ import { SEEDS, SeedId } from '../data/seeds';
 import { FRUITS } from '../data/fruits';
 import { HYBRID_RECIPES } from '../data/hybrids';
 import { SYNTHESIS_PLANTS } from '../data/synthesis';
+import { BOOSTERS, BoosterId } from '../data/boosters';
 import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
 
 export interface Cell {
@@ -55,6 +56,24 @@ export interface GameState {
 }
 
 export type View = 'field' | 'shop' | 'inventory' | 'exchange' | 'profile';
+
+export interface BoosterNotification {
+  boosterId: BoosterId;
+  name: string;
+  emoji: string;
+  message: string;
+}
+
+function boosterFallback(id: BoosterId): InventoryItem {
+  const def = BOOSTERS[id];
+  return {
+    id,
+    type: 'booster',
+    name: def?.name ?? 'Бустер',
+    emoji: def?.emoji ?? '✨',
+    count: 0,
+  };
+}
 
 const FIELD_SIZE = 9; // 3x3
 const START_BALANCE = 100;
@@ -160,6 +179,7 @@ export function useGameLogic(tgId?: number) {
   const [seedSelectForCell, setSeedSelectForCell] = useState<number | null>(null);
   const tickRef = useRef<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [boosterNotification, setBoosterNotification] = useState<BoosterNotification | null>(null);
 
   // Initialize API with Telegram ID
   useEffect(() => {
@@ -435,27 +455,183 @@ export function useGameLogic(tgId?: number) {
   }, []);
 
   // Boosters
-  const addBooster = useCallback((id: 'booster_speedup', count: number) => {
+  const addBooster = useCallback((id: BoosterId, count: number) => {
     setState(prev => {
-      const fallback: InventoryItem = { id, type: 'booster', name: 'Ускоритель роста', emoji: '⚡', count: 0 };
-      const nextInv = addCount(prev.inventory, id, count, fallback);
+      const nextInv = addCount(prev.inventory, id, count, boosterFallback(id));
       return { ...prev, inventory: nextInv };
     });
   }, []);
 
-  const useBoosterSpeedup = useCallback(() => {
+  const buyBooster = useCallback((boosterId: BoosterId) => {
+    const booster = BOOSTERS[boosterId];
+    if (!booster) return false;
+
+    let purchased = false;
     setState(prev => {
-      const inv = getItem(prev.inventory, 'booster_speedup');
-      if (!inv || inv.count <= 0) return prev;
-      // find first growing cell
-      const idx = prev.field.findIndex(c => c.status === 'growing');
-      if (idx === -1) return prev; // nothing to speed up
-      const nextField = prev.field.map(c => c);
-      nextField[idx] = { id: nextField[idx].id, seed: nextField[idx].seed, status: 'ready' as const };
-      const nextInv = addCount(prev.inventory, 'booster_speedup', -1, { id: 'booster_speedup', type: 'booster', name: 'Ускоритель роста', emoji: '⚡', count: 0 });
-      return { ...prev, field: nextField, inventory: nextInv };
+      if (prev.balance < booster.price) return prev;
+      purchased = true;
+      const nextInventory = addCount(prev.inventory, boosterId, 1, boosterFallback(boosterId));
+      return {
+        ...prev,
+        balance: prev.balance - booster.price,
+        totalSpent: prev.totalSpent + booster.price,
+        inventory: nextInventory,
+      };
     });
+    return purchased;
   }, []);
+
+  const applyBooster = useCallback((boosterId: BoosterId, cellId?: number) => {
+    const boosterDef = BOOSTERS[boosterId];
+    if (!boosterDef) return false;
+
+    let success = false;
+    let notificationMessage: string | null = null;
+
+    setState(prev => {
+      const inventoryItem = getItem(prev.inventory, boosterId);
+      if (!inventoryItem || inventoryItem.count <= 0) {
+        notificationMessage = 'У вас нет такого бустера в инвентаре.';
+        return prev;
+      }
+
+      const currentTime = now();
+      let stateAfterEffect: GameState | null = null;
+
+      switch (boosterId) {
+        case 'booster_speedup': {
+          let affected = 0;
+          const updatedField = prev.field.map(cell => {
+            if (cell.status === 'growing' && cell.seed && cell.plantedAt) {
+              if (cell.frozenUntil && currentTime < cell.frozenUntil) {
+                return cell;
+              }
+              const seedDef = getSeedInfo(cell.seed);
+              if (!seedDef) return cell;
+              const growMs = seedDef.growSeconds * 1000;
+              const elapsed = currentTime - cell.plantedAt;
+              const remaining = Math.max(0, growMs - elapsed);
+              if (remaining <= 0) {
+                affected += 1;
+                return { ...cell, status: 'ready' as const, plantedAt: undefined };
+              }
+              const newRemaining = Math.floor(remaining / 2);
+              if (newRemaining <= 0) {
+                affected += 1;
+                return { ...cell, status: 'ready' as const, plantedAt: undefined };
+              }
+              const adjustedPlantedAt = currentTime - (growMs - newRemaining);
+              if (adjustedPlantedAt !== cell.plantedAt) {
+                affected += 1;
+                return { ...cell, plantedAt: adjustedPlantedAt };
+              }
+            }
+            return cell;
+          });
+
+          if (affected === 0) {
+            notificationMessage = 'Нет растений, которые можно ускорить.';
+            return prev;
+          }
+
+          success = true;
+          notificationMessage = affected > 1
+            ? `Ускоритель роста ускорил ${affected} растений.`
+            : 'Ускоритель роста сократил время роста растения.';
+          stateAfterEffect = { ...prev, field: updatedField };
+          break;
+        }
+        case 'booster_watering_can': {
+          if (typeof cellId !== 'number') {
+            notificationMessage = 'Выберите клетку с растущим растением, чтобы использовать лейку.';
+            return prev;
+          }
+          const targetCell = prev.field[cellId];
+          if (!targetCell || targetCell.status !== 'growing' || !targetCell.seed || !targetCell.plantedAt) {
+            notificationMessage = 'Лейка работает только на растущем растении.';
+            return prev;
+          }
+
+          const seedDef = getSeedInfo(targetCell.seed);
+          if (!seedDef) {
+            notificationMessage = 'Не удалось определить растение для полива.';
+            return prev;
+          }
+
+          const growMs = seedDef.growSeconds * 1000;
+          const elapsed = currentTime - targetCell.plantedAt;
+          const remaining = Math.max(0, growMs - elapsed);
+          let updatedCell: Cell;
+
+          if (remaining <= 0) {
+            updatedCell = { ...targetCell, status: 'ready' as const, plantedAt: undefined };
+          } else {
+            const newRemaining = Math.floor(remaining / 2);
+            if (newRemaining <= 0) {
+              updatedCell = { ...targetCell, status: 'ready' as const, plantedAt: undefined };
+            } else {
+              const adjustedPlantedAt = currentTime - (growMs - newRemaining);
+              updatedCell = { ...targetCell, plantedAt: adjustedPlantedAt };
+            }
+          }
+
+          success = true;
+          const updatedField = prev.field.map((cell, idx) => (idx === cellId ? updatedCell : cell));
+          notificationMessage =
+            updatedCell.status === 'ready'
+              ? 'Растение полностью созрело после полива.'
+              : 'Время роста растения заметно сократилось.';
+          stateAfterEffect = { ...prev, field: updatedField };
+          break;
+        }
+        case 'booster_fertilizer': {
+          if (typeof cellId !== 'number') {
+            notificationMessage = 'Выберите клетку с растущим растением, чтобы использовать удобрение.';
+            return prev;
+          }
+          const targetCell = prev.field[cellId];
+          if (!targetCell || targetCell.status !== 'growing' || !targetCell.seed) {
+            notificationMessage = 'Удобрение работает только на растущем растении.';
+            return prev;
+          }
+
+          success = true;
+          notificationMessage = 'Удобрение мгновенно довело растение до стадии сбора.';
+          const updatedField = prev.field.map((cell, idx) =>
+            idx === cellId ? { ...cell, status: 'ready' as const, plantedAt: undefined } : cell
+          );
+          stateAfterEffect = { ...prev, field: updatedField };
+          break;
+        }
+        default: {
+          notificationMessage = 'Неизвестный тип бустера.';
+          return prev;
+        }
+      }
+
+      if (!success || !stateAfterEffect) {
+        return prev;
+      }
+
+      const nextInventory = addCount(prev.inventory, boosterId, -1, boosterFallback(boosterId));
+      return { ...stateAfterEffect, inventory: nextInventory };
+    });
+
+    if (notificationMessage) {
+      setBoosterNotification({
+        boosterId,
+        name: boosterDef.name,
+        emoji: boosterDef.emoji,
+        message: notificationMessage,
+      });
+    }
+
+    return success;
+  }, [setBoosterNotification]);
+
+  const clearBoosterNotification = useCallback(() => {
+    setBoosterNotification(null);
+  }, [setBoosterNotification]);
 
   // Daily rewards
   const getTodayDayNumber = () => Math.floor(Date.now() / (24 * 60 * 60 * 1000));
@@ -481,42 +657,13 @@ export function useGameLogic(tgId?: number) {
 
       let nextInv = prev.inventory;
       if (boosters > 0) {
-        nextInv = addCount(nextInv, 'booster_speedup', boosters, { id: 'booster_speedup', type: 'booster', name: 'Ускоритель роста', emoji: '⚡', count: 0 });
+        nextInv = addCount(nextInv, 'booster_speedup', boosters, boosterFallback('booster_speedup'));
       }
       nextInv = addCount(nextInv, randomSeed, 1, { id: randomSeed, type: 'seed', name: SEEDS[randomSeed].name, emoji: SEEDS[randomSeed].emoji, count: 0 });
 
       return { ...prev, balance: prev.balance + eco, inventory: nextInv, lastDailyClaim: today, dailyStreak: nextStreak };
     });
   }, []);
-
-  // Fortune Wheel helpers
-  const addWheelSpins = useCallback((n: number) => {
-    setState(prev => ({ ...prev, wheelSpins: Math.max(0, (prev.wheelSpins ?? 0) + n) }));
-  }, []);
-
-  const grantReward = useCallback((reward: { type: 'eco'|'booster'|'seed'; amount?: number; seedId?: string; seedRarity?: 'common'|'uncommon'|'rare'|'epic'|'legendary' }) => {
-    setState(prev => {
-      if (reward.type === 'eco') {
-        const gain = reward.amount ?? 0;
-        return { ...prev, balance: prev.balance + gain, totalEarned: prev.totalEarned + gain };
-      }
-      if (reward.type === 'booster') {
-        const amt = reward.amount ?? 1;
-        const nextInv = addCount(prev.inventory, 'booster_speedup', amt, { id: 'booster_speedup', type: 'booster', name: 'Ускоритель роста', emoji: '⚡', count: 0 });
-        return { ...prev, inventory: nextInv };
-      }
-      // seed
-      const rarity = reward.seedRarity ?? 'common';
-      const seedKeys = Object.keys(SEEDS) as (keyof typeof SEEDS)[];
-      const candidates = seedKeys.filter(k => SEEDS[k].rarity === rarity);
-      const sid = reward.seedId ?? (candidates[Math.floor(Math.random() * Math.max(1, candidates.length))] || seedKeys[0]);
-      const def = SEEDS[sid as keyof typeof SEEDS];
-      const nextInv = addCount(prev.inventory, sid, reward.amount ?? 1, { id: sid, type: 'seed', name: def.name, emoji: def.emoji, count: 0 });
-      return { ...prev, inventory: nextInv };
-    });
-  }, []);
-
-
 
   const clearProgress = useCallback(() => {
     setState({ 
@@ -625,7 +772,7 @@ export function useGameLogic(tgId?: number) {
     });
   }, []);
 
-  const startCraft = useCallback((recipeId: string, ingredients: { id: string; type: 'seed' | 'fruit'; count: number }[]) => {
+  const startCraft = useCallback((recipeId: string, _ingredients: { id: string; type: 'seed' | 'fruit'; count: number }[]) => {
     setState(prev => {
       const recipe = HYBRID_RECIPES.find((r) => r.id === recipeId);
       if (!recipe) {
@@ -769,7 +916,10 @@ export function useGameLogic(tgId?: number) {
     completeCraft,
     getCraftProgress,
     addBooster,
-    useBoosterSpeedup,
+    buyBooster,
+    applyBooster,
+    boosterNotification,
+    clearBoosterNotification,
     canClaimDaily,
     claimDaily,
     buyEcoWithTon,

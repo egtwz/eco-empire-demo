@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
+import { BOOSTERS, BoosterId } from '../data/boosters';
 import BuyConfirmModal from './BuyConfirmModal';
 import GiftModal from './GiftModal';
 
@@ -18,11 +19,17 @@ interface Props {
 }
 
 export default function ItemActionModal({ open, item, onClose, game }: Props & { game: ReturnType<typeof useGameLogic> }) {
-  const { sellFruit, sellSeed, useBoosterSpeedup } = game;
+  const { sellFruit, sellSeed, applyBooster } = game;
   const [showSellModal, setShowSellModal] = useState(false);
   const [showGiftModal, setShowGiftModal] = useState(false);
 
   if (!item) return null;
+
+  const isBooster = item.type === 'booster';
+  const boosterInfo =
+    isBooster && Object.prototype.hasOwnProperty.call(BOOSTERS, item.id)
+      ? BOOSTERS[item.id as BoosterId]
+      : undefined;
 
   const getSellPrice = () => {
     if (item.type === 'fruit') {
@@ -51,7 +58,7 @@ export default function ItemActionModal({ open, item, onClose, game }: Props & {
     onClose();
   };
 
-  const sellPrice = getSellPrice();
+  const sellPrice = isBooster ? 0 : getSellPrice();
 
   return (
     <>
@@ -86,20 +93,48 @@ export default function ItemActionModal({ open, item, onClose, game }: Props & {
                 <div className="text-4xl mb-2">{item.emoji}</div>
                 <div className="text-sm font-medium">{item.name}</div>
                 <div className="text-xs text-gray-500">В наличии: {item.count} шт</div>
+              {isBooster ? (
+                boosterInfo && (
+                  <div className="text-xs text-purple-600 mt-1">{boosterInfo.shortDescription}</div>
+                )
+              ) : (
                 <div className="text-xs text-green-600 mt-1">
                   Цена продажи: {sellPrice} $ECO/шт
                 </div>
+              )}
               </div>
 
               <div className="space-y-3">
                 {item.type === 'booster' ? (
-                  <button
-                    onClick={() => { useBoosterSpeedup(); onClose(); }}
-                    className="w-full py-3 rounded-xl bg-purple-500 text-white hover:bg-purple-600 font-medium flex items-center justify-center gap-2"
-                  >
-                    <span>⚡</span>
-                    <span>Использовать</span>
-                  </button>
+                  <>
+                    {boosterInfo && (
+                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-left">
+                        <div className="text-sm font-semibold text-purple-800 mb-1">{boosterInfo.name}</div>
+                        <div className="text-xs text-purple-700 leading-relaxed">{boosterInfo.detailedDescription}</div>
+                        <div className="text-xs text-purple-600 mt-2">
+                          {boosterInfo.usage === 'target'
+                            ? 'Чтобы применить бустер, нажмите на клетку с растущим растением и выберите этот бустер в меню.'
+                            : 'Используйте бустер, и он сработает на всех подходящих растениях сразу.'}
+                        </div>
+                      </div>
+                    )}
+                    {boosterInfo?.usage === 'global' ? (
+                      <button
+                        onClick={() => {
+                          applyBooster(boosterInfo.id);
+                          onClose();
+                        }}
+                        className="w-full py-3 rounded-xl bg-purple-500 text-white hover:bg-purple-600 font-medium flex items-center justify-center gap-2"
+                      >
+                        <span>⚡</span>
+                        <span>Использовать</span>
+                      </button>
+                    ) : (
+                      <div className="text-xs text-gray-500 text-center">
+                        Выберите клетку с растущим семенем, чтобы применить бустер.
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <>
                     <button

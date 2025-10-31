@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { useShopStock } from '../hooks/useShopStock';
 import { SeedId, RARITY_COLORS } from '../data/seeds';
+import { BOOSTERS } from '../data/boosters';
 import ShopConfirmModal from './ShopConfirmModal';
 import SeedInfoModal from './SeedInfoModal';
 import SubscriptionModal from './SubscriptionModal';
@@ -9,7 +10,7 @@ import SubscriptionModal from './SubscriptionModal';
 type Tab = 'seeds' | 'boosters' | 'other';
 
 export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }) {
-  const { state, buySeed } = game;
+  const { state, buySeed, buyBooster } = game;
   const { stock, timeToRefresh, decreaseStock } = useShopStock();
   const [activeTab, setActiveTab] = useState<Tab>('seeds');
   const [selectedSeed, setSelectedSeed] = useState<{ id: SeedId; name: string; emoji: string; price: number } | null>(null);
@@ -55,7 +56,7 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
         {/* Вкладки */}
         <div className="flex gap-2 mb-4">
           <TabButton id="seeds" label="Семена" emoji="🌱" color="bg-gradient-to-r from-green-500 to-green-600" borderColor="green-700" />
-          <TabButton id="boosters" label="Улучшения" emoji="⚡" color="bg-gradient-to-r from-yellow-500 to-orange-500" borderColor="orange-600" />
+          <TabButton id="boosters" label="Бустеры" emoji="⚡" color="bg-gradient-to-r from-yellow-500 to-orange-500" borderColor="orange-600" />
           <TabButton id="other" label="Прочее" emoji="💎" color="bg-gradient-to-r from-purple-500 to-pink-500" borderColor="pink-600" />
         </div>
 
@@ -112,39 +113,41 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
         )}
 
         {activeTab === 'boosters' && (
-          <div className="grid grid-cols-1 gap-2">
-            <div className="p-3 rounded-2xl bg-white border border-gray-300 shadow-md flex items-center gap-3">
-              <div className="text-2xl">⚡</div>
-              <div className="flex-1">
-                <div className="text-sm font-medium">Ускорение роста</div>
-                <div className="text-xs text-gray-500">Сокращает время роста на 50%</div>
-              </div>
-              <button className="px-3 py-2 rounded-xl bg-yellow-500 text-white hover:bg-yellow-600 font-medium">
-                50 TON
-              </button>
-            </div>
-            
-            <div className="p-3 rounded-2xl bg-white border border-gray-300 shadow-md flex items-center gap-3">
-              <div className="text-2xl">💰</div>
-              <div className="flex-1">
-                <div className="text-sm font-medium">Двойной доход</div>
-                <div className="text-xs text-gray-500">Удваивает доход от сбора урожая</div>
-              </div>
-              <button className="px-3 py-2 rounded-xl bg-yellow-500 text-white hover:bg-yellow-600 font-medium">
-                100 TON
-              </button>
-            </div>
-            
-            <div className="p-3 rounded-2xl bg-white border border-gray-300 shadow-md flex items-center gap-3">
-              <div className="text-2xl">📈</div>
-              <div className="flex-1">
-                <div className="text-sm font-medium">Приоритет на бирже</div>
-                <div className="text-xs text-gray-500">Первые в очереди на бирже</div>
-              </div>
-              <button className="px-3 py-2 rounded-xl bg-yellow-500 text-white hover:bg-yellow-600 font-medium">
-                200 TON
-              </button>
-            </div>
+          <div className="space-y-3">
+            {Object.values(BOOSTERS).map((booster) => {
+              const owned = state.inventory.find((item) => item.id === booster.id)?.count ?? 0;
+              const canAfford = state.balance >= booster.price;
+
+              return (
+                <div key={booster.id} className="p-3 rounded-2xl bg-white border border-gray-300 shadow-md">
+                  <div className="flex items-start gap-3">
+                    <div className="text-3xl">{booster.emoji}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-gray-800">{booster.name}</span>
+                        <span className="text-sm font-bold text-green-600">{booster.price} $ECO</span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">{booster.shortDescription}</div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {booster.usage === 'target'
+                          ? 'Применение: нажмите на растущую клетку и выберите бустер'
+                          : 'Применение: используйте из инвентаря'}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">В инвентаре: {owned} шт.</div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <button
+                        onClick={() => buyBooster(booster.id)}
+                        disabled={!canAfford}
+                        className="px-3 py-2 rounded-xl bg-[var(--primary)] text-white hover:bg-[var(--secondary)] disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                      >
+                        Купить
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 

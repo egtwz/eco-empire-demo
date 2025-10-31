@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useGameLogic } from '../hooks/useGameLogic';
 import SeedSelectModal from './SeedSelectModal';
 import RewardsModal from './RewardsModal';
 import NewsModal from './NewsModal';
 import { SYNTHESIS_PLANTS, SYNTHESIS_RECIPES } from '../data/synthesis';
 import { RARITY_COLORS } from '../data/seeds';
+import { BOOSTERS, BoosterId } from '../data/boosters';
+import BoosterSelectModal from './BoosterSelectModal';
 
 export default function Field({ game }: { game: ReturnType<typeof useGameLogic> }) {
   const { state, openSeedModal, closeSeedModal, seedSelectForCell, seedsInInventory, plantSeed, harvest, timeLeftForCell, addItemToInventory, startSynthesis, completeSynthesis } = game;
@@ -18,6 +20,8 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
   const [showNews, setShowNews] = useState(false);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [boosterCellId, setBoosterCellId] = useState<number | null>(null);
+  const [boosterBlockReason, setBoosterBlockReason] = useState<string | null>(null);
 
   // Проверка можно ли улучшить поле
   const canUpgradeField = () => {
@@ -55,6 +59,53 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
 
   const emojiSize = getEmojiSize();
   const timerSize = getTimerSize();
+
+  const targetedBoosters = useMemo(() => {
+    return Object.values(BOOSTERS)
+      .filter((booster) => booster.usage === 'target')
+      .map((booster) => ({
+        def: booster,
+        count: state.inventory.find((item) => item.id === booster.id)?.count ?? 0,
+      }));
+  }, [state.inventory]);
+
+  const hasTargetedBoosters = targetedBoosters.some((booster) => booster.count > 0);
+
+  const handleOpenBoosterMenu = (cellIndex: number) => {
+    const cell = state.field[cellIndex];
+
+    if (!hasTargetedBoosters) {
+      setBoosterBlockReason('У вас нет бустеров, которые можно применить к растениям.');
+      setBoosterCellId(cellIndex);
+      return;
+    }
+
+    const isFrozenBySynthesis = Boolean(cell?.frozenUntil && Date.now() < cell.frozenUntil);
+    if (isFrozenBySynthesis) {
+      setBoosterBlockReason('Нельзя применить бустер, пока рядом идёт синтез. Подождите завершения процесса.');
+      setBoosterCellId(cellIndex);
+      return;
+    }
+
+    setBoosterBlockReason(null);
+    setBoosterCellId(cellIndex);
+  };
+
+  const handleSelectBoosterForCell = (boosterId: BoosterId) => {
+    if (boosterCellId === null || boosterBlockReason) {
+      setBoosterCellId(null);
+      setBoosterBlockReason(null);
+      return;
+    }
+    game.applyBooster(boosterId, boosterCellId);
+    setBoosterCellId(null);
+    setBoosterBlockReason(null);
+  };
+
+  const closeBoosterModal = () => {
+    setBoosterCellId(null);
+    setBoosterBlockReason(null);
+  };
 
   // Находим возможные рецепты синтеза на основе соседних растений
   const getAvailableSynthesisRecipes = (cellId: number): string[] => {
@@ -243,10 +294,16 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
             const m = Math.floor(sec / 60).toString();
             const s = (sec % 60).toString().padStart(2, '0');
             return (
-              <div key={cell.id} className="aspect-square rounded-xl bg-white shadow-md flex flex-col items-center justify-center">
+              <button
+                key={cell.id}
+                onClick={() => handleOpenBoosterMenu(cell.id)}
+                className={`aspect-square rounded-xl bg-white shadow-md flex flex-col items-center justify-center focus:outline-none focus:ring-0 transition-all ${
+                  hasTargetedBoosters ? 'hover:bg-gray-50 active:scale-95' : ''
+                }`}
+              >
                 <div className={emojiSize}>⏳</div>
                 <div className={`${timerSize} text-gray-600`}>{m}:{s}</div>
-              </div>
+              </button>
             );
           }
           // ready
@@ -285,6 +342,16 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
         onSelect={(seedId) => {
           if (seedSelectForCell !== null) plantSeed(seedSelectForCell, seedId as any);
         }}
+      />
+
+      <BoosterSelectModal
+        open={boosterCellId !== null}
+        boosters={targetedBoosters}
+        onClose={closeBoosterModal}
+        onSelect={handleSelectBoosterForCell}
+        selectedCell={boosterCellId !== null ? state.field[boosterCellId] : null}
+        timeLeft={boosterCellId !== null ? timeLeftForCell(state.field[boosterCellId]) : null}
+        blockedReason={boosterBlockReason}
       />
 
       <RewardsModal open={showRewards} onClose={() => setShowRewards(false)} game={game} />
