@@ -8,17 +8,13 @@ import Exchange from './components/Exchange';
 import Profile from './components/Profile';
 import BoosterNotificationModal from './components/BoosterNotificationModal';
 import { useGameLogic } from './hooks/useGameLogic';
+import { useTelegram } from './hooks/useTelegram';
 import './styles.css';
 
-declare global {
-  interface Window {
-    Telegram?: any;
-  }
-}
-
 export default function App() {
+  const { user: telegramUser, isReady: telegramReady, initData } = useTelegram();
   const [tgId, setTgId] = useState<number | undefined>();
-  const game = useGameLogic(tgId);
+  const game = useGameLogic(tgId, initData);
   const [showSplash, setShowSplash] = useState(true);
   const tips = useMemo(() => [
     '💡 Совет: Сначала сажайте быстрые семена для старта',
@@ -31,27 +27,19 @@ export default function App() {
   const [tipIndex, setTipIndex] = useState(0);
 
   useEffect(() => {
-    // Инициализируем Telegram WebApp
-    try {
-      if (window.Telegram?.WebApp) {
-        window.Telegram.WebApp.ready();
-        window.Telegram.WebApp.expand();
-        
-        // Получаем данные пользователя из Telegram
-        const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
-        if (tgUser) {
-          setTgId(tgUser.id);
-          game.updateUsername(tgUser.first_name || 'Пользователь');
-        }
-      } else {
-        // Fallback для разработки
-        setTgId(123456789);
-      }
-    } catch (e) {
-      console.error('Telegram WebApp initialization error:', e);
+    if (telegramUser?.id) {
+      setTgId(telegramUser.id);
+    } else if (telegramReady && !telegramUser) {
+      // Fallback для локальной разработки
       setTgId(123456789);
     }
-  }, []);
+  }, [telegramUser, telegramReady]);
+
+  useEffect(() => {
+    if (telegramUser?.first_name) {
+      game.updateUsername(telegramUser.first_name);
+    }
+  }, [telegramUser?.first_name, game.updateUsername]);
 
   // Splash screen lifecycle
   useEffect(() => {
@@ -93,6 +81,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
+      {import.meta.env.DEV && (
+        <div className="fixed bottom-2 left-2 z-50 max-w-xs rounded-xl bg-black/70 text-white text-xs px-3 py-2 space-y-1">
+          <div className="font-semibold">DEBUG</div>
+          <div>Telegram ready: {telegramReady ? 'yes' : 'no'}</div>
+          <div>Telegram ID: {telegramUser?.id ?? '—'}</div>
+          <div>Init data: {initData ? `${initData.slice(0, 60)}…` : 'missing'}</div>
+        </div>
+      )}
       <Header balance={game.state.balance} view={game.view} setView={game.setView} game={game} />
       
       {/* Контент с отступом сверху и снизу */}

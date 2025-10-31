@@ -9,8 +9,11 @@ interface TelegramUser {
 }
 
 interface TelegramWebApp {
+  initData?: string;
   initDataUnsafe?: {
     user?: TelegramUser;
+    auth_date?: number;
+    query_id?: string;
   };
   ready: () => void;
   expand: () => void;
@@ -31,6 +34,7 @@ declare global {
 export function useTelegram() {
   const [user, setUser] = useState<TelegramUser | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [initData, setInitData] = useState<string | null>(null);
 
   useEffect(() => {
     const initTelegram = () => {
@@ -40,6 +44,10 @@ export function useTelegram() {
           window.Telegram.WebApp.expand();
           
           const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
+          const rawInitData = window.Telegram.WebApp.initData || null;
+          if (rawInitData) {
+            setInitData(rawInitData);
+          }
           if (tgUser) {
             setUser(tgUser);
           }
@@ -82,6 +90,8 @@ export function useTelegram() {
   return {
     user,
     isReady,
+    initData,
+    initDataUnsafe: window.Telegram?.WebApp?.initDataUnsafe,
     sendData,
     openLink,
     close

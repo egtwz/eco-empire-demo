@@ -20,7 +20,7 @@ export default defineConfig((env: ConfigEnv): UserConfig => {
 
     return {
       ...(https ? { https } : {}),
-      host: '192.168.1.120',
+      host: '0.0.0.0',
       port: 3000,
       strictPort: true,
       proxy: {

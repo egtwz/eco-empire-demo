@@ -147,7 +147,7 @@ function addCount(inventory: InventoryItem[], id: string, delta: number, fallbac
   return setItem(inventory, next).filter((i) => i.count > 0);
 }
 
-export function useGameLogic(tgId?: number) {
+export function useGameLogic(tgId?: number, initData?: string | null) {
   const [state, setState] = useState<GameState>(() => { 
     return { 
       field: createEmptyField(), 
@@ -183,10 +183,13 @@ export function useGameLogic(tgId?: number) {
 
   // Initialize API with Telegram ID
   useEffect(() => {
+    let cancelled = false;
+
     if (tgId) {
-      gameAPI.init(tgId);
+      gameAPI.init(tgId, initData ?? null);
       // Load user data from API
       gameAPI.getUserData().then(saved => {
+        if (cancelled) return;
         if (saved) {
           const fieldLevel = saved.fieldLevel ?? 0;
           const expectedSize = fieldLevel === 0 ? FIELD_SIZE : FIELD_UPGRADES[fieldLevel - 1].size;
@@ -239,13 +242,20 @@ export function useGameLogic(tgId?: number) {
     } else {
       setIsLoading(false);
     }
-  }, [tgId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [tgId, initData]);
 
   // Persist on changes locally
   useEffect(() => {
-    if (!isLoading && tgId) {
+    if (isLoading || !tgId) return;
+
+    const timeout = window.setTimeout(() => {
       gameAPI.saveUserData(state);
-    }
+    }, 1500);
+
+    return () => window.clearTimeout(timeout);
   }, [state, isLoading, tgId]);
 
 

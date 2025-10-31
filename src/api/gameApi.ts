@@ -1,12 +1,22 @@
-// Локальные сохранения на устройстве (localStorage), привязка к Telegram user_id
 import { GameState } from '../hooks/useGameLogic';
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 class GameAPI {
   private tgId: number | null = null;
+  private initData: string | null = null;
   private saving = false;
+  private lastServerUpdatedAt: number | null = null;
 
-  init(tgId: number) {
+  init(tgId: number, initData?: string | null) {
     this.tgId = tgId;
+    if (typeof initData === 'string') {
+      this.initData = initData;
+    }
+  }
+
+  setTelegramInitData(initData: string | null) {
+    this.initData = initData;
   }
 
   isSaving() {
@@ -17,34 +27,120 @@ class GameAPI {
     return this.tgId ? `eco_empire_save_${this.tgId}` : 'eco_empire_save';
   }
 
-  async getUserData(): Promise<GameState | null> {
+  private buildHeaders(base: Record<string, string> = {}) {
+    const headers: Record<string, string> = { ...base };
+    if (this.initData) {
+      headers['x-telegram-init-data'] = this.initData;
+    } else if (import.meta.env.DEV && this.tgId) {
+      headers['x-dev-user-id'] = String(this.tgId);
+    }
+    return headers;
+  }
+
+  private getSaveUrl() {
+    if (!this.tgId) throw new Error('Telegram ID not initialised');
+    const base = API_BASE_URL || '';
+    return `${base}/api/save/${this.tgId}`;
+  }
+
+  private persistLocal(gameState: GameState, updatedAt: number) {
+    try {
+      const payload = { __updatedAt: updatedAt, state: gameState };
+      localStorage.setItem(this.storageKey(), JSON.stringify(payload));
+    } catch (error) {
+      console.error('Failed to persist local state', error);
+    }
+  }
+
+  private async loadLocal(): Promise<GameState | null> {
     if (!this.tgId) return null;
     try {
       const raw = localStorage.getItem(this.storageKey());
       if (!raw) return null;
       const parsed = JSON.parse(raw);
+      this.lastServerUpdatedAt = parsed.__updatedAt ?? null;
       return parsed.state as GameState;
-    } catch (e) {
-      console.error('Failed to load user data:', e);
+    } catch (error) {
+      console.error('Failed to load local state', error);
       return null;
     }
   }
 
-  // Разрешение конфликтов: если сервер новее — не перезаписываем
+  async getUserData(): Promise<GameState | null> {
+    if (!this.tgId) return null;
+
+    // Пробуем локальное сохранение сначала (быстрый старт)
+    const cached = await this.loadLocal();
+
+    try {
+      const response = await fetch(this.getSaveUrl(), {
+        method: 'GET',
+        headers: this.buildHeaders(),
+      });
+
+      if (response.status === 404) {
+        return cached;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to load: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data?.save_data) {
+        this.lastServerUpdatedAt = data.updated_at ?? null;
+        this.persistLocal(data.save_data, data.updated_at ?? Date.now());
+        return data.save_data as GameState;
+      }
+    } catch (error) {
+      console.error('Failed to fetch user data from API', error);
+    }
+
+    return cached;
+  }
+
   async saveUserData(gameState: GameState): Promise<void> {
     if (!this.tgId) return;
+
     this.saving = true;
+    const updatedAt = Date.now();
+    this.persistLocal(gameState, updatedAt);
+
     try {
-      const now = Date.now();
-      const payload = { __updatedAt: now, state: gameState };
-      localStorage.setItem(this.storageKey(), JSON.stringify(payload));
-    } catch (e) {
-      console.error('Failed to save user data:', e);
+      const payload: any = {
+        save_data: gameState,
+        updated_at: updatedAt,
+      };
+
+      if (this.lastServerUpdatedAt != null) {
+        payload.last_client_known = this.lastServerUpdatedAt;
+      }
+
+      const response = await fetch(this.getSaveUrl(), {
+        method: 'PUT',
+        headers: this.buildHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 409) {
+        const conflict = await response.json();
+        this.lastServerUpdatedAt = conflict.updated_at ?? this.lastServerUpdatedAt;
+        console.warn('Server state is newer, consider resolving conflict');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Save failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      this.lastServerUpdatedAt = result?.updated_at ?? updatedAt;
+    } catch (error) {
+      console.error('Failed to save user data to API', error);
     } finally {
       this.saving = false;
     }
   }
-  // В локальном режиме не отправляем статистику/логи
 }
 
 export const gameAPI = new GameAPI();
