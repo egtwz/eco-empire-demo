@@ -14,6 +14,7 @@ interface TelegramWebApp {
     user?: TelegramUser;
     auth_date?: number;
     query_id?: string;
+    start_param?: string;
   };
   ready: () => void;
   expand: () => void;
@@ -64,10 +65,22 @@ function parseUserFromInitData(raw: string): TelegramUser | null {
   }
 }
 
+function parseStartParamFromInitData(raw: string): string | null {
+  try {
+    const params = new URLSearchParams(raw);
+    const start = params.get('start_param');
+    if (start) return start;
+  } catch (error) {
+    console.error('Failed to parse start_param from initData', error);
+  }
+  return null;
+}
+
 export function useTelegram() {
   const [user, setUser] = useState<TelegramUser | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [initData, setInitData] = useState<string | null>(null);
+  const [startParam, setStartParam] = useState<string | null>(null);
 
   useEffect(() => {
     const initTelegram = () => {
@@ -83,9 +96,14 @@ export function useTelegram() {
           }
           if (rawInitData) {
             setInitData(rawInitData);
+            const start = parseStartParamFromInitData(rawInitData);
+            if (start) setStartParam(start);
           }
           if (tgUser) {
             setUser(tgUser);
+          }
+          if (window.Telegram.WebApp.initDataUnsafe?.start_param && !startParam) {
+            setStartParam(window.Telegram.WebApp.initDataUnsafe.start_param);
           }
           
           setIsReady(true);
@@ -109,6 +127,8 @@ export function useTelegram() {
       const hashData = extractInitDataFromLocation();
       if (hashData) {
         setInitData(hashData);
+        const start = parseStartParamFromInitData(hashData);
+        if (start) setStartParam(start);
       }
     }
   }, [initData]);
@@ -120,8 +140,12 @@ export function useTelegram() {
       if (parsedUser) {
         setUser(parsedUser);
       }
+      if (!startParam) {
+        const start = parseStartParamFromInitData(initData);
+        if (start) setStartParam(start);
+      }
     }
-  }, [user, initData]);
+  }, [user, initData, startParam]);
 
   const sendData = (data: any) => {
     if (window.Telegram?.WebApp) {
@@ -147,6 +171,7 @@ export function useTelegram() {
     user,
     isReady,
     initData,
+    startParam,
     initDataUnsafe: window.Telegram?.WebApp?.initDataUnsafe,
     sendData,
     openLink,

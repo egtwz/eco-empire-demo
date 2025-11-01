@@ -61,12 +61,16 @@ export default function RewardsModal({ open, onClose, game }: { open: boolean; o
 
 function DailyRewardsModal({ open, onClose, game, onClaimed }: { open: boolean; onClose: () => void; game: ReturnType<typeof useGameLogic>; onClaimed: () => void }) {
   const plan = buildDailyPlan();
-  const dailyStreak = game?.state?.dailyStreak ?? 0;
-  const todayIndex = Math.min(dailyStreak, 14);
+  const cycleLength = plan.length;
+  const lastClaimedDay = game?.state?.dailyCycleDay ?? 0;
   const canClaim = game?.canClaimDaily ? game.canClaimDaily() : false;
+  const nextDay = ((lastClaimedDay % cycleLength) + 1);
+  const displayDay = canClaim ? nextDay : (lastClaimedDay === 0 ? 1 : lastClaimedDay);
+  const highlightIndex = Math.max(0, (canClaim ? nextDay - 1 : displayDay - 1));
+
   const handleClaim = () => {
     if (!game?.claimDaily) return;
-    const reward = plan[todayIndex];
+    const reward = plan[Math.min(nextDay - 1, cycleLength - 1)];
     game.claimDaily(rewardToPlanArg(reward));
     onClaimed();
   };
@@ -93,11 +97,11 @@ function DailyRewardsModal({ open, onClose, game, onClaimed }: { open: boolean; 
               <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">✕</button>
             </div>
 
-            <div className="text-xs text-gray-600 mb-3">Заходите каждый день и забирайте призы. День {todayIndex + 1} из 15</div>
+            <div className="text-xs text-gray-600 mb-3">День {displayDay} из {cycleLength}. Собирайте награды подряд, чтобы завершить 15-дневный цикл.</div>
 
             <div className="grid grid-cols-3 gap-2 overflow-y-auto pr-1 mb-3">
               {plan.map((r, idx) => (
-                <div key={idx} className={`p-3 rounded-xl border text-center ${idx === todayIndex ? 'bg-yellow-50 border-yellow-300' : 'bg-gray-50 border-gray-200'}`}>
+                <div key={idx} className={`p-3 rounded-xl border text-center ${idx === highlightIndex ? 'bg-yellow-50 border-yellow-300' : 'bg-gray-50 border-gray-200'}`}>
                   <div className="text-xs text-gray-500 mb-1">День {idx + 1}</div>
                   <div className="text-lg mb-1">{r.emoji}</div>
                   <div className="text-[11px] text-gray-700 whitespace-pre-line">{r.label}</div>
@@ -107,7 +111,7 @@ function DailyRewardsModal({ open, onClose, game, onClaimed }: { open: boolean; 
 
             <div className="mt-auto -mx-5 -mb-5 px-5 pb-5 pt-3 bg-white">
               <button disabled={!canClaim} onClick={handleClaim} className={`w-full py-3 rounded-xl font-semibold text-white ${canClaim ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-300 cursor-not-allowed'}`}>
-                Забрать награду
+                {canClaim ? 'Забрать награду' : 'Уже собрано, возвращайтесь завтра'}
               </button>
             </div>
           </motion.div>

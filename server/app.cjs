@@ -11,6 +11,21 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
 const crypto = require('crypto');
+const {
+  ensurePositiveInteger,
+  ensurePositiveNumber,
+  cloneInventory,
+  ensureMarketLocked,
+  changeInventoryQuantity,
+  buildLockedInfo,
+  parseLockedInfo,
+  formatOrderRow,
+  calculateTradeAmounts,
+  fetchUserSaveForUpdate,
+  currentTimestamp,
+  adjustMarketLocked,
+  roundAmount,
+} = require('./marketCommon.cjs');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -121,6 +136,20 @@ function ensureTelegramAuth(req, res, next) {
   next();
 }
 
+const orderCommissionSell = 0.02;
+const orderCommissionBuy = 0.02;
+
+function applyDefaultReferralStats(saveData) {
+  if (!saveData.referralStats) {
+    saveData.referralStats = { totalIncome: 0, salesIncome: 0, tonIncome: 0, count: saveData.referralStats?.count || 0 };
+  } else {
+    saveData.referralStats.totalIncome = Number(saveData.referralStats.totalIncome || 0);
+    saveData.referralStats.salesIncome = Number(saveData.referralStats.salesIncome || 0);
+    saveData.referralStats.tonIncome = Number(saveData.referralStats.tonIncome || 0);
+    saveData.referralStats.count = Number(saveData.referralStats.count || 0);
+  }
+}
+
 // Saves
 app.get('/api/save/:user_id', ensureTelegramAuth, parseUserId, async (req, res) => {
   try {
@@ -184,6 +213,99 @@ app.put('/api/save/:user_id', ensureTelegramAuth, parseUserId, async (req, res) 
   }
 });
 
+app.get('/api/referrals/:user_id', ensureTelegramAuth, parseUserId, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `select user_id, save_data
+         from user_saves
+        where (save_data->>'referrerId')::bigint = $1`,
+      [req.params.user_id]
+    );
+    const list = rows.map((row) => {
+      const data = row.save_data || {};
+      return {
+        telegramId: Number(row.user_id),
+        username: data.username,
+        playerId: data.playerId,
+        title: data.title,
+        level: data.level,
+        balance: data.balance,
+        totalEarned: data.totalEarned,
+        seedsPlanted: data.seedsPlanted,
+        fruitsHarvested: data.fruitsHarvested,
+        hybridsCreated: data.hybridsCreated,
+        dailyStreak: data.dailyStreak,
+        dailyCycleDay: data.dailyCycleDay,
+      };
+    });
+    return res.json({ referrals: list });
+  } catch (error) {
+    console.error('referrals list error', error);
+    return res.status(500).json({ error: 'DB error' });
+  }
+});
+
+app.post('/api/referrals/reward', ensureTelegramAuth, async (req, res) => {
+  const userId = String(req.telegramUser.id);
+  const reason = req.body?.reason;
+  const rawAmount = Number(req.body?.amount);
+  if (!reason || !['sale', 'ton'].includes(reason) || !Number.isFinite(rawAmount) || rawAmount <= 0) {
+    return res.status(400).json({ error: 'Invalid payload' });
+  }
+  const amount = Math.floor(rawAmount);
+
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query('select save_data from user_saves where user_id = $1', [userId]);
+    if (!rows.length) {
+      return res.json({ ok: true });
+    }
+    const referrerId = Number(rows[0].save_data?.referrerId);
+    if (!referrerId || referrerId === Number(userId)) {
+      return res.json({ ok: true });
+    }
+
+    await client.query('BEGIN');
+    const refRows = await client.query('select save_data from user_saves where user_id = $1 for update', [referrerId]);
+    if (!refRows.length) {
+      await client.query('ROLLBACK');
+      return res.json({ ok: true });
+    }
+    const refData = refRows[0].save_data || {};
+    const currentBalance = Number(refData.balance) || 0;
+    const currentEarned = Number(refData.totalEarned) || 0;
+    refData.balance = currentBalance + amount;
+    refData.totalEarned = currentEarned + amount;
+
+    const stats = {
+      totalIncome: Number(refData.referralStats?.totalIncome) || 0,
+      salesIncome: Number(refData.referralStats?.salesIncome) || 0,
+      tonIncome: Number(refData.referralStats?.tonIncome) || 0,
+      count: Number(refData.referralStats?.count) || 0,
+    };
+    stats.totalIncome += amount;
+    if (reason === 'sale') {
+      stats.salesIncome += amount;
+    } else if (reason === 'ton') {
+      stats.tonIncome += amount;
+    }
+    refData.referralStats = stats;
+
+    await client.query(
+      `update user_saves set save_data = $2, updated_at = $3 where user_id = $1`,
+      [referrerId, refData, Date.now()]
+    );
+    await client.query('COMMIT');
+    return res.json({ ok: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('referral reward error', error);
+    return res.status(500).json({ error: 'DB error' });
+  } finally {
+    client.release();
+  }
+});
+
 // Stats
 app.post('/api/stats/update', ensureTelegramAuth, async (req, res) => {
   const { user_id, inc_session, time_spent = 0, achievements = [], custom_stats = {} } = req.body || {};
@@ -241,5 +363,353 @@ app.get('/api/stats/users/count', ensureTelegramAuth, async (_req, res) => {
   }
 });
 
-module.exports = app;
+app.get('/api/market/orders', ensureTelegramAuth, async (req, res) => {
+  const { currency, rarity, item_id: itemId, sort = 'price_asc', item_type: itemType } = req.query;
+  if (currency !== 'eco' && currency !== 'ton') {
+    return res.status(400).json({ error: 'Invalid currency' });
+  }
+
+  const params = [currency];
+  const filters = ['status = \"open\"', 'currency = $1'];
+  let paramIndex = params.length;
+
+  if (itemType && ['seed', 'fruit'].includes(itemType)) {
+    params.push(itemType);
+    filters.push(`item_type = $${params.length}`);
+  }
+  if (itemId) {
+    params.push(itemId);
+    filters.push(`item_id = $${params.length}`);
+  }
+  if (rarity) {
+    params.push(rarity);
+    filters.push(`rarity = $${params.length}`);
+  }
+
+  let orderClause = 'ORDER BY price ASC';
+  if (sort === 'price_desc') orderClause = 'ORDER BY price DESC';
+  if (sort === 'newest') orderClause = 'ORDER BY created_at DESC';
+  if (sort === 'oldest') orderClause = 'ORDER BY created_at ASC';
+
+  const sql = `
+    SELECT id, user_id, item_id, item_type, rarity, currency, price, quantity_total, quantity_left, status, locked_items, created_at, updated_at
+    FROM market_orders
+    WHERE ${filters.join(' AND ')}
+    ${orderClause}
+    LIMIT 100
+  `;
+
+  try {
+    const { rows } = await pool.query(sql, params);
+    return res.json({ orders: rows.map(formatOrderRow) });
+  } catch (error) {
+    console.error('market orders list error', error);
+    return res.status(500).json({ error: 'DB error' });
+  }
+});
+
+app.get('/api/market/orders/mine', ensureTelegramAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, user_id, item_id, item_type, rarity, currency, price, quantity_total, quantity_left, status, locked_items, created_at, updated_at
+       FROM market_orders
+       WHERE user_id = $1 AND status = 'open'
+       ORDER BY created_at DESC`,
+      [req.telegramUser.id]
+    );
+    return res.json({ orders: rows.map(formatOrderRow) });
+  } catch (error) {
+    console.error('market orders mine error', error);
+    return res.status(500).json({ error: 'DB error' });
+  }
+});
+
+app.post('/api/market/orders', ensureTelegramAuth, async (req, res) => {
+  const { itemId, itemType, rarity, price, quantity, currency, metadata } = req.body || {};
+  try {
+    if (!itemId || typeof itemId !== 'string') {
+      return res.status(400).json({ error: 'itemId is required' });
+    }
+    if (!['seed', 'fruit', 'currency'].includes(itemType)) {
+      return res.status(400).json({ error: 'Invalid itemType' });
+    }
+    if (!['eco', 'ton'].includes(currency)) {
+      return res.status(400).json({ error: 'Invalid currency' });
+    }
+    if (itemType === 'currency' && itemId !== 'ECO') {
+      return res.status(400).json({ error: 'Unsupported currency item' });
+    }
+    const qty = ensurePositiveInteger(quantity, 'quantity');
+    const unitPrice = ensurePositiveNumber(price, 'price');
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const saveData = await fetchUserSaveForUpdate(client, req.telegramUser.id);
+      const inventory = cloneInventory(saveData);
+      const lockedEntry = { itemId, itemType, name: metadata?.name, emoji: metadata?.emoji, rarity, quantity: qty, currency };
+
+      if (itemType === 'currency') {
+        const currentEco = Number(saveData.balance || 0);
+        if (currentEco < qty) {
+          throw Object.assign(new Error('Недостаточно $ECO для выставления ордера'), { statusCode: 400 });
+        }
+        saveData.balance = roundAmount(currentEco - qty);
+      } else {
+        changeInventoryQuantity(inventory, {
+          itemId,
+          itemType,
+          delta: -qty,
+          name: metadata?.name,
+          emoji: metadata?.emoji,
+          rarity,
+        });
+        saveData.inventory = inventory;
+      }
+
+      const lockedInfo = buildLockedInfo({ itemId, itemType, name: metadata?.name, emoji: metadata?.emoji, rarity, quantity: qty });
+
+      const { rows } = await client.query(
+        `INSERT INTO market_orders
+          (user_id, item_id, item_type, rarity, currency, price, quantity_total, quantity_left, status, locked_items)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$7,'open',$8)
+         RETURNING id, user_id, item_id, item_type, rarity, currency, price, quantity_total, quantity_left, status, locked_items, created_at, updated_at`,
+        [req.telegramUser.id, itemId, itemType, rarity || null, currency, unitPrice, qty, lockedInfo]
+      );
+
+      const orderRow = rows[0];
+      const order = formatOrderRow(orderRow);
+
+      const lockedArray = ensureMarketLocked(saveData);
+      lockedArray.push({
+        orderId: order.id,
+        itemId,
+        itemType,
+        quantity: qty,
+        name: metadata?.name || lockedInfo.name,
+        emoji: metadata?.emoji || lockedInfo.emoji,
+        rarity,
+        currency,
+      });
+
+      await client.query(
+        'UPDATE user_saves SET save_data = $2, updated_at = $3 WHERE user_id = $1',
+        [req.telegramUser.id, saveData, currentTimestamp()]
+      );
+
+      await client.query('COMMIT');
+
+      const sellerReceives = unitPrice * qty * (1 - orderCommissionSell);
+      return res.json({ order, sellerReceives });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (!error.statusCode) console.error('market create order error', error);
+      return res.status(error.statusCode || 500).json({ error: error.message || 'DB error' });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    if (!error.statusCode) console.error('market create order validation error', error);
+    return res.status(error.statusCode || 500).json({ error: error.message || 'Server error' });
+  }
+});
+
+app.post('/api/market/orders/:order_id/buy', ensureTelegramAuth, async (req, res) => {
+  const { quantity } = req.body || {};
+  try {
+    const qtyRequested = ensurePositiveInteger(quantity, 'quantity');
+    const orderId = Number(req.params.order_id);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({ error: 'Invalid order id' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: orderRows } = await client.query('SELECT * FROM market_orders WHERE id = $1 FOR UPDATE', [orderId]);
+      if (!orderRows.length) {
+        throw Object.assign(new Error('Заявка не найдена'), { statusCode: 404 });
+      }
+      const order = orderRows[0];
+      if (order.status !== 'open' || Number(order.quantity_left) <= 0) {
+        throw Object.assign(new Error('Заявка уже закрыта'), { statusCode: 400 });
+      }
+      if (Number(order.user_id) === Number(req.telegramUser.id)) {
+        throw Object.assign(new Error('Нельзя покупать свою заявку'), { statusCode: 400 });
+      }
+
+      const quantityLeft = Number(order.quantity_left);
+      const tradeQty = Math.min(qtyRequested, quantityLeft);
+      const unitPrice = Number(order.price);
+      const lockedInfo = parseLockedInfo(order.locked_items);
+      if (!lockedInfo) {
+        throw Object.assign(new Error('Заявка повреждена'), { statusCode: 400 });
+      }
+
+      const sellerSave = await fetchUserSaveForUpdate(client, order.user_id);
+      const buyerSave = await fetchUserSaveForUpdate(client, req.telegramUser.id);
+
+      const { sellerReceives, buyerPays, commission } = calculateTradeAmounts(unitPrice, tradeQty);
+      if (order.currency === 'eco') {
+        if ((buyerSave.balance ?? 0) < buyerPays) {
+          throw Object.assign(new Error('Недостаточно $ECO для покупки'), { statusCode: 400 });
+        }
+        buyerSave.balance = roundAmount((buyerSave.balance ?? 0) - buyerPays);
+        sellerSave.balance = roundAmount((sellerSave.balance ?? 0) + sellerReceives);
+      } else {
+        if ((buyerSave.tonBalance ?? 0) < buyerPays) {
+          throw Object.assign(new Error('Недостаточно TON для покупки'), { statusCode: 400 });
+        }
+        buyerSave.tonBalance = roundAmount((buyerSave.tonBalance ?? 0) - buyerPays);
+        sellerSave.tonBalance = roundAmount((sellerSave.tonBalance ?? 0) + sellerReceives);
+      }
+
+      const lockedArraySeller = ensureMarketLocked(sellerSave);
+      adjustMarketLocked(lockedArraySeller, orderId, (entry) => {
+        const remaining = Number(entry.quantity || 0) - tradeQty;
+        if (remaining <= 0) return null;
+        entry.quantity = remaining;
+        return entry;
+      });
+      sellerSave.marketLocked = lockedArraySeller;
+
+      if (order.item_type === 'currency') {
+        buyerSave.balance = roundAmount((buyerSave.balance ?? 0) + tradeQty);
+      } else {
+        const buyerInventory = cloneInventory(buyerSave);
+        changeInventoryQuantity(buyerInventory, {
+          itemId: order.item_id,
+          itemType: order.item_type,
+          delta: tradeQty,
+          name: lockedInfo.name,
+          emoji: lockedInfo.emoji,
+          rarity: lockedInfo.rarity,
+        });
+        buyerSave.inventory = buyerInventory;
+      }
+
+      sellerSave.inventory = cloneInventory(sellerSave);
+
+      const nowTs = currentTimestamp();
+      await client.query(
+        'UPDATE user_saves SET save_data = $2, updated_at = $3 WHERE user_id = $1',
+        [order.user_id, sellerSave, nowTs]
+      );
+      await client.query(
+        'UPDATE user_saves SET save_data = $2, updated_at = $3 WHERE user_id = $1',
+        [req.telegramUser.id, buyerSave, nowTs]
+      );
+
+      const remaining = quantityLeft - tradeQty;
+      lockedInfo.quantityLocked = remaining;
+      const newStatus = remaining === 0 ? 'closed' : 'open';
+      await client.query(
+        `UPDATE market_orders
+         SET quantity_left = $2,
+             status = $3,
+             locked_items = $4,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [orderId, remaining, newStatus, lockedInfo]
+      );
+
+      await client.query(
+        `INSERT INTO market_trades (order_id, buyer_id, quantity, price, currency, commission)
+         VALUES ($1,$2,$3,$4,$5,$6)` ,
+        [orderId, req.telegramUser.id, tradeQty, unitPrice, order.currency, commission]
+      );
+
+      await client.query('COMMIT');
+      return res.json({
+        ok: true,
+        orderId,
+        quantityPurchased: tradeQty,
+        price: unitPrice,
+        buyerPays,
+        sellerReceives,
+        commission,
+        quantityLeft: remaining,
+        status: newStatus,
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (!error.statusCode) console.error('market buy error', error);
+      return res.status(error.statusCode || 500).json({ error: error.message || 'DB error' });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    if (!error.statusCode) console.error('market buy validation error', error);
+    return res.status(error.statusCode || 500).json({ error: error.message || 'Server error' });
+  }
+});
+
+app.post('/api/market/orders/:order_id/cancel', ensureTelegramAuth, async (req, res) => {
+  const orderId = Number(req.params.order_id);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ error: 'Invalid order id' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM market_orders WHERE id = $1 FOR UPDATE', [orderId]);
+    if (!rows.length) {
+      throw Object.assign(new Error('Заявка не найдена'), { statusCode: 404 });
+    }
+    const order = rows[0];
+    if (Number(order.user_id) !== Number(req.telegramUser.id)) {
+      throw Object.assign(new Error('Нельзя отменить чужую заявку'), { statusCode: 403 });
+    }
+    if (order.status !== 'open') {
+      throw Object.assign(new Error('Заявка уже закрыта'), { statusCode: 400 });
+    }
+
+    const lockedInfo = parseLockedInfo(order.locked_items);
+    const quantityLeft = Number(order.quantity_left);
+
+    const saveData = await fetchUserSaveForUpdate(client, order.user_id);
+    if (quantityLeft > 0 && lockedInfo) {
+      if (order.item_type === 'currency') {
+        saveData.balance = roundAmount(Number(saveData.balance || 0) + quantityLeft);
+      } else {
+        const inventory = cloneInventory(saveData);
+        changeInventoryQuantity(inventory, {
+          itemId: lockedInfo.itemId,
+          itemType: lockedInfo.itemType,
+          delta: quantityLeft,
+          name: lockedInfo.name,
+          emoji: lockedInfo.emoji,
+          rarity: lockedInfo.rarity,
+        });
+        saveData.inventory = inventory;
+      }
+    }
+
+    const lockedArray = ensureMarketLocked(saveData);
+    adjustMarketLocked(lockedArray, orderId, () => null);
+    saveData.marketLocked = lockedArray;
+
+    await client.query(
+      'UPDATE user_saves SET save_data = $2, updated_at = $3 WHERE user_id = $1',
+      [order.user_id, saveData, currentTimestamp()]
+    );
+    const lockedAfter = lockedInfo ? { ...lockedInfo, quantityLocked: 0 } : lockedInfo;
+    await client.query(
+      `UPDATE market_orders
+       SET status = 'cancelled', quantity_left = 0, locked_items = $2, updated_at = NOW()
+       WHERE id = $1`,
+      [orderId, lockedAfter]
+    );
+
+    await client.query('COMMIT');
+    return res.json({ ok: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (!error.statusCode) console.error('market cancel error', error);
+    return res.status(error.statusCode || 500).json({ error: error.message || 'DB error' });
+  } finally {
+    client.release();
+  }
+});
 

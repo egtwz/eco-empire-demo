@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
-import { SYNTHESIS_PLANTS, SYNTHESIS_RECIPES, SynthesisRarity } from '../data/synthesis';
+import { SYNTHESIS_PLANTS, SYNTHESIS_RECIPES } from '../data/synthesis';
 import { RARITY_COLORS } from '../data/seeds';
 
 type InfoSection = 'gameplay' | 'rarity' | 'hybrids' | 'synthesis' | 'shop' | 'levels' | 'rewards' | 'profile' | 'exchange' | 'tips';

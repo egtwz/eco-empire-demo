@@ -7,6 +7,8 @@ import { SYNTHESIS_PLANTS } from '../data/synthesis';
 import { BOOSTERS, BoosterId } from '../data/boosters';
 import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
 
+const DAILY_CYCLE_LENGTH = 15;
+
 export interface Cell {
   id: number;
   seed?: string; // может быть SeedId или гибридное семя
@@ -21,6 +23,30 @@ export interface InventoryItem {
   type: 'seed' | 'fruit' | 'booster';
   emoji: string;
   count: number;
+}
+
+export interface MarketLockedEntry {
+  orderId: number;
+  itemId: string;
+  itemType: 'seed' | 'fruit' | 'currency';
+  quantity: number;
+  name?: string;
+  emoji?: string;
+  rarity?: string;
+  currency?: 'eco' | 'ton';
+}
+
+function roundCurrency(value: number | null | undefined, precision: number = 3) {
+  const factor = Math.pow(10, precision);
+  return Number(Math.round(((value ?? 0) + Number.EPSILON) * factor) / factor);
+}
+
+function withRoundedBalances<T extends GameState>(state: T): T {
+  return {
+    ...state,
+    balance: roundCurrency(state.balance),
+    tonBalance: roundCurrency(state.tonBalance),
+  };
 }
 
 export interface GameState {
@@ -51,7 +77,16 @@ export interface GameState {
     addedIngredients: { index: number; id: string; type: 'seed' | 'fruit'; count: number }[];
   } | null;
   lastDailyClaim?: number; // epoch day number (UTC days)
-  dailyStreak?: number; // consecutive claim days
+  dailyStreak?: number; // consecutive claim days within current cycle
+  dailyCycleDay?: number; // последний успешно собранный день цикла (0 означает не начинал)
+  referrerId?: number | null;
+  referralStats?: {
+    totalIncome: number;
+    salesIncome: number;
+    tonIncome: number;
+    count?: number;
+  };
+  marketLocked?: MarketLockedEntry[];
   synthesisActive?: Array<{ cellId: number; plantId: string; startTime: number; willSucceed: boolean }>; // синтез активен
 }
 
@@ -147,39 +182,126 @@ function addCount(inventory: InventoryItem[], id: string, delta: number, fallbac
   return setItem(inventory, next).filter((i) => i.count > 0);
 }
 
-export function useGameLogic(tgId?: number, initData?: string | null) {
-  const [state, setState] = useState<GameState>(() => { 
-    return { 
-      field: createEmptyField(), 
-      inventory: [], 
-      balance: START_BALANCE, 
-      tonBalance: 0,
-      fieldLevel: 0,
-      level: 1,
-      xp: 0,
-      totalEarned: 0,
-      totalSpent: 0,
-      seedsPlanted: 0,
-      fruitsHarvested: 0,
-      hybridsCreated: 0,
-      playTime: 0,
-      username: 'Игрок',
-      playerId: generatePlayerId(),
-      subscription: 'none',
-      title: '',
-      activeCraft: null,
-      craftDraft: null,
-      lastDailyClaim: undefined,
-      dailyStreak: 0,
-      synthesisActive: []
-    };
-  });
+function normalizeSaveData(saved: any): GameState {
+  const fieldLevel = saved.fieldLevel ?? 0;
+  const expectedSize = fieldLevel === 0 ? FIELD_SIZE : FIELD_UPGRADES[fieldLevel - 1]?.size ?? FIELD_SIZE;
+  let restoredField: Cell[] = Array.isArray(saved.field) ? saved.field : [];
+
+  if (restoredField.length !== expectedSize) {
+    restoredField = createEmptyField(expectedSize);
+  } else {
+    restoredField = restoredField.map((cell: any) => {
+      if (cell && cell.status === 'growing' && cell.seed && cell.plantedAt) {
+        const seedDef = getSeedInfo(cell.seed);
+        if (seedDef) {
+          const growMs = seedDef.growSeconds * 1000;
+          if (now() - cell.plantedAt >= growMs) {
+            return { ...cell, status: 'ready' as const };
+          }
+        }
+      }
+      return cell;
+    });
+  }
+
+  const normalisedStreak = normaliseDaily(saved?.dailyStreak);
+  const normalisedCycle = normaliseDaily(saved?.dailyCycleDay ?? saved?.dailyStreak);
+  const savedReferrer = safeNumber(saved?.referrerId);
+  const savedRefStats = normalizeReferralStats(saved?.referralStats);
+
+  return {
+    field: restoredField,
+    inventory: Array.isArray(saved.inventory) ? saved.inventory : [],
+    balance: roundCurrency(saved.balance ?? START_BALANCE),
+    tonBalance: roundCurrency(saved.tonBalance ?? 0),
+    fieldLevel: fieldLevel,
+    level: saved.level ?? 1,
+    xp: saved.xp ?? 0,
+    totalEarned: saved.totalEarned ?? 0,
+    totalSpent: saved.totalSpent ?? 0,
+    seedsPlanted: saved.seedsPlanted ?? 0,
+    fruitsHarvested: saved.fruitsHarvested ?? 0,
+    hybridsCreated: saved.hybridsCreated ?? 0,
+    playTime: saved.playTime ?? 0,
+    username: saved.username ?? 'Игрок',
+    playerId: saved.playerId ?? generatePlayerId(),
+    subscription: saved.subscription ?? 'none',
+    title: saved.title ?? '',
+    activeCraft: saved.activeCraft ?? null,
+    craftDraft: saved.craftDraft ?? null,
+    lastDailyClaim: saved.lastDailyClaim,
+    dailyStreak: normalisedStreak,
+    dailyCycleDay: normalisedCycle,
+    referrerId: savedReferrer,
+    referralStats: savedRefStats,
+    marketLocked: Array.isArray(saved.marketLocked) ? saved.marketLocked : [],
+    synthesisActive: Array.isArray(saved.synthesisActive) ? saved.synthesisActive : [],
+  };
+}
+
+export function useGameLogic(tgId?: number, initData?: string | null, startParam?: string | null) {
+  const [state, setState] = useState<GameState>(() => normalizeSaveData({
+    field: createEmptyField(),
+    inventory: [],
+    balance: START_BALANCE,
+    tonBalance: 0,
+    fieldLevel: 0,
+    level: 1,
+    xp: 0,
+    totalEarned: 0,
+    totalSpent: 0,
+    seedsPlanted: 0,
+    fruitsHarvested: 0,
+    hybridsCreated: 0,
+    playTime: 0,
+    username: 'Игрок',
+    playerId: generatePlayerId(),
+    subscription: 'none',
+    title: '',
+    activeCraft: null,
+    craftDraft: null,
+    lastDailyClaim: undefined,
+    dailyStreak: 0,
+    dailyCycleDay: 0,
+    referrerId: null,
+    referralStats: { totalIncome: 0, salesIncome: 0, tonIncome: 0, count: 0 },
+    marketLocked: [],
+    synthesisActive: [],
+  }));
 
   const [view, setView] = useState<View>('field');
   const [seedSelectForCell, setSeedSelectForCell] = useState<number | null>(null);
   const tickRef = useRef<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [boosterNotification, setBoosterNotification] = useState<BoosterNotification | null>(null);
+  const stateRef = useRef(state);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    setState(prev => {
+      const roundedBalance = roundCurrency(prev.balance);
+      const roundedTon = roundCurrency(prev.tonBalance);
+      if (roundedBalance === prev.balance && roundedTon === prev.tonBalance) {
+        return prev;
+      }
+      return { ...prev, balance: roundedBalance, tonBalance: roundedTon };
+    });
+  }, [state.balance, state.tonBalance]);
+
+  const applyServerState = useCallback((saved: any) => {
+    const mapped = normalizeSaveData(saved);
+    setState(mapped);
+    gameAPI.updateCustomStats({
+      title: mapped.title,
+      daily_streak: mapped.dailyStreak,
+      daily_cycle_day: mapped.dailyCycleDay,
+      referrer_id: mapped.referrerId ?? undefined,
+    });
+    return mapped;
+  }, []);
 
   // Initialize API with Telegram ID
   useEffect(() => {
@@ -187,56 +309,19 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
 
     if (tgId) {
       gameAPI.init(tgId, initData ?? null);
-      // Load user data from API
       gameAPI.getUserData().then(saved => {
         if (cancelled) return;
+        let baseState: GameState | null = null;
         if (saved) {
-          const fieldLevel = saved.fieldLevel ?? 0;
-          const expectedSize = fieldLevel === 0 ? FIELD_SIZE : FIELD_UPGRADES[fieldLevel - 1].size;
-          let restoredField: Cell[] = saved.field as Cell[];
-          
-          // Если размер поля изменился, пересоздаем поле
-          if (restoredField.length !== expectedSize) {
-            restoredField = createEmptyField(expectedSize);
-          } else {
-            restoredField = restoredField.map((cell) => {
-              if (cell.status === 'growing' && cell.seed && cell.plantedAt) {
-                const seedDef = getSeedInfo(cell.seed);
-                if (seedDef) {
-                  const growMs = seedDef.growSeconds * 1000;
-                  if (now() - cell.plantedAt >= growMs) {
-                    return { ...cell, status: 'ready' as const };
-                  }
-                }
-              }
-              return cell;
-            });
-          }
-          setState({ 
-            field: restoredField, 
-            inventory: saved.inventory || [], 
-            balance: saved.balance ?? START_BALANCE, 
-            tonBalance: (saved as any).tonBalance ?? 0,
-            fieldLevel: fieldLevel,
-            level: saved.level ?? 1,
-            xp: saved.xp ?? 0,
-            totalEarned: saved.totalEarned ?? 0,
-            totalSpent: saved.totalSpent ?? 0,
-            seedsPlanted: saved.seedsPlanted ?? 0,
-            fruitsHarvested: saved.fruitsHarvested ?? 0,
-            hybridsCreated: saved.hybridsCreated ?? 0,
-            playTime: saved.playTime ?? 0,
-            username: saved.username ?? 'Игрок',
-            playerId: saved.playerId ?? generatePlayerId(),
-            subscription: saved.subscription ?? 'none',
-            title: (saved as any).title ?? '',
-            activeCraft: saved.activeCraft ?? null,
-            craftDraft: (saved as any).craftDraft ?? null,
-            lastDailyClaim: (saved as any).lastDailyClaim,
-            dailyStreak: (saved as any).dailyStreak ?? 0,
-            synthesisActive: (saved as any).synthesisActive ?? []
-          });
+          baseState = applyServerState(saved);
+        } else {
+          baseState = stateRef.current;
         }
+        if (baseState && !baseState.marketLocked) {
+          baseState.marketLocked = [];
+          setState(baseState);
+        }
+        stateRef.current = baseState ?? stateRef.current;
         setIsLoading(false);
       });
     } else {
@@ -245,26 +330,41 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [tgId, initData]);
+  }, [tgId, initData, applyServerState]);
 
-  // Persist on changes locally
-  const saveSignature = useMemo(() => {
-    const { playTime, ...rest } = state;
-    return JSON.stringify(rest);
-  }, [state]);
+  useEffect(() => {
+    if (!state.referrerId && startParam && tgId) {
+      const candidate = parseReferrerFromStart(startParam);
+      if (candidate && candidate !== tgId) {
+        setState(prev => {
+          if (prev.referrerId || candidate === tgId) return prev;
+          gameAPI.updateCustomStats({ referrer_id: candidate });
+          return { ...prev, referrerId: candidate };
+        });
+      }
+    }
+  }, [startParam, tgId, state.referrerId]);
 
   useEffect(() => {
     if (isLoading || !tgId) return;
 
-    const snapshot = state;
-    const timeout = window.setTimeout(() => {
-      gameAPI.saveUserData(snapshot);
-    }, 1500);
+    const tick = async () => {
+      if (!gameAPI.isSaving()) {
+        const latest = await gameAPI.saveUserData(stateRef.current);
+        if (latest) {
+          applyServerState(latest);
+        }
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void tick();
+    }, 500);
 
     return () => {
-      window.clearTimeout(timeout);
+      window.clearInterval(interval);
     };
-  }, [saveSignature, isLoading, tgId]);
+  }, [isLoading, tgId, applyServerState]);
 
 
   // Timer to progress growing cells to ready and update play time
@@ -391,7 +491,7 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
     setState((prev) => {
       const seed = SEEDS[seedId];
       if (prev.balance < seed.price) return prev;
-      const nextBalance = prev.balance - seed.price;
+      const nextBalance = roundCurrency(prev.balance - seed.price);
       const nextInv = addCount(prev.inventory, seedId, 1, {
         id: seedId,
         type: 'seed',
@@ -399,22 +499,29 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
         emoji: seed.emoji,
         count: 0,
       });
-      return { 
+      return withRoundedBalances({ 
         ...prev, 
         balance: nextBalance, 
         inventory: nextInv,
         totalSpent: prev.totalSpent + seed.price
-      };
+      });
     });
   }, []);
 
   const sellFruit = useCallback((fruitId: string, count: number) => {
+    let referralReward: number | null = null;
     setState((prev) => {
       const fruit = getFruitInfo(fruitId);
       if (!fruit || count <= 0) return prev;
       const invItem = getItem(prev.inventory, fruitId);
       if (!invItem || invItem.count < count) return prev;
       const income = fruit.sellPrice * count;
+      if (prev.referrerId && income > 0) {
+        referralReward = Math.floor(income * 0.05);
+        if (referralReward === 0) {
+          referralReward = null;
+        }
+      }
       const nextInv = addCount(prev.inventory, fruitId, -count, {
         id: fruitId,
         type: 'fruit',
@@ -422,13 +529,17 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
         emoji: fruit.emoji,
         count: 0,
       });
-      return { 
+      return withRoundedBalances({ 
         ...prev, 
         inventory: nextInv, 
-        balance: prev.balance + income,
+        balance: roundCurrency(prev.balance + income),
         totalEarned: prev.totalEarned + income
-      };
+      });
     });
+
+    if (referralReward && referralReward > 0) {
+      gameAPI.grantReferralReward('sale', referralReward);
+    }
   }, []);
 
   const sellSeed = useCallback((seedId: string, count: number) => {
@@ -445,12 +556,12 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
         emoji: seed.emoji,
         count: 0,
       });
-      return { 
+      return withRoundedBalances({ 
         ...prev, 
         inventory: nextInv, 
-        balance: prev.balance + income,
+        balance: roundCurrency(prev.balance + income),
         totalEarned: prev.totalEarned + income
-      };
+      });
     });
   }, []);
 
@@ -463,12 +574,12 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
       
       const newSize = upgrade.size;
       const newField = createEmptyField(newSize);
-      return { 
+      return withRoundedBalances({ 
         ...prev, 
         field: newField, 
-        balance: prev.balance - upgrade.cost, 
+        balance: roundCurrency(prev.balance - upgrade.cost), 
         fieldLevel: nextLevel 
-      };
+      });
     });
   }, []);
 
@@ -489,12 +600,12 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
       if (prev.balance < booster.price) return prev;
       purchased = true;
       const nextInventory = addCount(prev.inventory, boosterId, 1, boosterFallback(boosterId));
-      return {
+      return withRoundedBalances({
         ...prev,
-        balance: prev.balance - booster.price,
+        balance: roundCurrency(prev.balance - booster.price),
         totalSpent: prev.totalSpent + booster.price,
         inventory: nextInventory,
-      };
+      });
     });
     return purchased;
   }, []);
@@ -659,11 +770,15 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
   }, [state.lastDailyClaim]);
 
   const claimDaily = useCallback((plan?: { eco?: number; boosters?: number; seedRarity?: 'common'|'uncommon'|'rare'|'epic'|'legendary' }) => {
+    let statsUpdate: { daily_cycle_day: number; daily_streak: number } | null = null;
     setState(prev => {
       const today = getTodayDayNumber();
       if (prev.lastDailyClaim === today) return prev;
       const yesterday = today - 1;
-      const nextStreak = prev.lastDailyClaim === yesterday ? (prev.dailyStreak ?? 0) + 1 : 1;
+      const continued = prev.lastDailyClaim === yesterday;
+      const previousCycleDay = prev.dailyCycleDay ?? 0;
+      const nextCycleDay = continued ? ((previousCycleDay % DAILY_CYCLE_LENGTH) + 1) : 1;
+      const nextStreak = continued ? ((prev.dailyStreak ?? 0) % DAILY_CYCLE_LENGTH) + 1 : 1;
 
       const eco = plan?.eco ?? 50;
       const boosters = plan?.boosters ?? 1;
@@ -679,12 +794,18 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
       }
       nextInv = addCount(nextInv, randomSeed, 1, { id: randomSeed, type: 'seed', name: SEEDS[randomSeed].name, emoji: SEEDS[randomSeed].emoji, count: 0 });
 
-      return { ...prev, balance: prev.balance + eco, inventory: nextInv, lastDailyClaim: today, dailyStreak: nextStreak };
+      statsUpdate = { daily_cycle_day: nextCycleDay, daily_streak: nextStreak };
+
+      return withRoundedBalances({ ...prev, balance: roundCurrency(prev.balance + eco), inventory: nextInv, lastDailyClaim: today, dailyStreak: nextStreak, dailyCycleDay: nextCycleDay });
     });
+
+    if (statsUpdate) {
+      gameAPI.updateCustomStats(statsUpdate);
+    }
   }, []);
 
   const clearProgress = useCallback(() => {
-    setState({ 
+    setState(withRoundedBalances({ 
       field: createEmptyField(), 
       inventory: [], 
       balance: START_BALANCE, 
@@ -705,8 +826,13 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
       activeCraft: null,
       craftDraft: null,
       lastDailyClaim: undefined,
-      dailyStreak: 0
-    });
+      dailyStreak: 0,
+      dailyCycleDay: 0,
+      referrerId: null,
+      referralStats: { totalIncome: 0, salesIncome: 0, tonIncome: 0, count: 0 },
+      marketLocked: [],
+      synthesisActive: []
+    }));
   }, []);
 
   const updateUsername = useCallback((newUsername: string) => {
@@ -715,6 +841,7 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
 
   const updateTitle = useCallback((newTitle: string) => {
     setState(prev => ({ ...prev, title: newTitle }));
+    gameAPI.updateCustomStats({ title: newTitle });
   }, []);
 
   const getLevelProgress = useCallback(() => {
@@ -839,10 +966,18 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
   }, [state.fieldLevel]);
   
   const buyEcoWithTon = useCallback((ecoAmount: number, tonCost: number) => {
+    let referralReward: number | null = null;
     setState(prev => {
       if (prev.tonBalance < tonCost) return prev;
-      return { ...prev, tonBalance: prev.tonBalance - tonCost, balance: prev.balance + ecoAmount };
+      if (prev.referrerId && ecoAmount > 0) {
+        referralReward = Math.floor(ecoAmount * 0.05);
+        if (referralReward === 0) referralReward = null;
+      }
+      return withRoundedBalances({ ...prev, tonBalance: roundCurrency(prev.tonBalance - tonCost), balance: roundCurrency(prev.balance + ecoAmount) });
     });
+    if (referralReward && referralReward > 0) {
+      gameAPI.grantReferralReward('ton', referralReward);
+    }
   }, []);
 
   const addItemToInventory = useCallback((item: { id: string; name: string; type: 'seed' | 'fruit' | 'booster'; emoji: string }, count: number = 1) => {
@@ -903,6 +1038,30 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
     }));
   }, []);
 
+  const setReferralCount = useCallback((count: number) => {
+    setState(prev => ({
+      ...prev,
+      referralStats: {
+        totalIncome: prev.referralStats?.totalIncome ?? 0,
+        salesIncome: prev.referralStats?.salesIncome ?? 0,
+        tonIncome: prev.referralStats?.tonIncome ?? 0,
+        count,
+      },
+    }));
+  }, []);
+
+  const reloadFromServer = useCallback(async () => {
+    if (!tgId) return;
+    try {
+      const saved = await gameAPI.getUserData();
+      if (saved) {
+        stateRef.current = applyServerState(saved);
+      }
+    } catch (error) {
+      console.error('Failed to reload state from server', error);
+    }
+  }, [tgId, applyServerState]);
+
   return {
     state,
     isLoading,
@@ -943,9 +1102,54 @@ export function useGameLogic(tgId?: number, initData?: string | null) {
     buyEcoWithTon,
     addItemToInventory,
     startSynthesis,
-    completeSynthesis
-    
-  } as const;
+    completeSynthesis,
+    getReferrals: gameAPI.getReferrals,
+    setReferralCount,
+    reloadFromServer,
+    listMarketOrders: (params: Parameters<typeof gameAPI.listMarketOrders>[0]) => gameAPI.listMarketOrders(params),
+    listMyMarketOrders: () => gameAPI.listMyMarketOrders(),
+    createMarketOrder: (payload: Parameters<typeof gameAPI.createMarketOrder>[0]) => gameAPI.createMarketOrder(payload),
+    buyMarketOrder: (orderId: number, quantity: number) => gameAPI.buyMarketOrder(orderId, quantity),
+    cancelMarketOrder: (orderId: number) => gameAPI.cancelMarketOrder(orderId),
+    telegramId: tgId,
+     
+   } as const;
+}
+
+function normaliseDaily(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  const base = Math.floor(value);
+  return ((base - 1) % DAILY_CYCLE_LENGTH) + 1;
+}
+
+function parseReferrerFromStart(startParam: string | null | undefined): number | null {
+  if (!startParam) return null;
+  const cleaned = startParam.trim();
+  if (!cleaned) return null;
+  const match = cleaned.match(/(\d+)/);
+  if (!match) return null;
+  const numeric = Number(match[1]);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : null;
+}
+
+function normalizeReferralStats(value: any) {
+  const totalIncome = Number(value?.totalIncome) || 0;
+  const salesIncome = Number(value?.salesIncome) || 0;
+  const tonIncome = Number(value?.tonIncome) || 0;
+  const count = Number(value?.count) || 0;
+  return {
+    totalIncome,
+    salesIncome,
+    tonIncome,
+    count,
+  };
+}
+
+function safeNumber(value: any) {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.floor(num) : null;
 }
 
 

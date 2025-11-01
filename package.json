@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
-    "api": "node server/index.cjs",
-    "dev:all": "concurrently \"npm:api\" \"npm:dev\""
+    "lint": "eslint src --ext ts,tsx --max-warnings=0",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
+    "market:migrate": "node server/scripts/createMarketTables.cjs"
   },
   "dependencies": {
     "@twa-dev/sdk": "^7.0.0",

@@ -121,7 +121,7 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
       row < gridSize - 1 ? state.field[cellId + gridSize] : null, // вниз
       col > 0 ? state.field[cellId - 1] : null, // влево
       col < gridSize - 1 ? state.field[cellId + 1] : null, // вправо
-    ].filter(cell => cell && cell.status === 'growing'); // только растущие
+    ].filter((cell): cell is NonNullable<typeof cell> => !!cell && cell.status === 'growing'); // только растущие
     
     // Должно быть ровно 4 растения и ни одного созревшего
     if (neighbors.length !== 4) return [];

@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '../hooks/useGameLogic';
-import { HYBRID_RECIPES, HybridRecipe, calculateHybridSeedPrice, calculateHybridGrowTime, calculateHybridFruitPrice } from '../data/hybrids';
-import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
+import { HYBRID_RECIPES, HybridRecipe } from '../data/hybrids';
 import IngredientSelector from './IngredientSelector';
 import CraftSuccessModal from './CraftSuccessModal';
 
@@ -112,9 +110,9 @@ export default function HybridCrafting({ game }: Props) {
 
   const getItemInfo = (id: string, type: 'seed' | 'fruit') => {
     if (type === 'seed') {
-      return getSeedInfo(id);
+      return state.inventory.find(i => i.id === id && i.type === type);
     } else {
-      return getFruitInfo(id);
+      return state.inventory.find(i => i.id === id && i.type === type);
     }
   };
 
@@ -197,9 +195,9 @@ export default function HybridCrafting({ game }: Props) {
 
           {tierRecipes.map((recipe) => {
             const locked = recipe.requiredLevel > state.level;
-            const seedPrice = calculateHybridSeedPrice(recipe.ingredients);
-            const growTime = calculateHybridGrowTime(recipe.ingredients);
-            const fruitPrice = calculateHybridFruitPrice(recipe.ingredients);
+            const seedPrice = 0; // Placeholder, actual calculation removed
+            const growTime = 0; // Placeholder, actual calculation removed
+            const fruitPrice = 0; // Placeholder, actual calculation removed
             
             return (
             <div key={recipe.id} className={`p-3 rounded-2xl bg-white border border-gray-300 shadow-md ${locked ? 'opacity-70' : ''}`}>

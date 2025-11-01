@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { motion, AnimatePresence } from 'framer-motion';
 import LevelDisplay from './LevelDisplay';
+import ReferralsModal from './ReferralsModal';
 
-export default function Profile({ game }: { game: ReturnType<typeof useGameLogic> }) {
+export default function Profile({ game, telegramId }: { game: ReturnType<typeof useGameLogic>; telegramId?: number }) {
   const { state, updateUsername, updateTitle } = game;
   const [newUsername, setNewUsername] = useState(state.username);
   const [showInvite, setShowInvite] = useState(false);
   const [showTitles, setShowTitles] = useState(false);
+  const [showReferrals, setShowReferrals] = useState(false);
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -15,6 +17,8 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
     const secs = seconds % 60;
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  const formatEco = (value?: number) => Number(value || 0).toLocaleString('ru-RU');
 
   const getSubscriptionColor = (sub: string) => {
     switch (sub) {
@@ -33,6 +37,9 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
   };
 
   const referralLink = `${window.location.origin}/?ref=${state.playerId}`;
+  const telegramReferralLink = telegramId
+    ? `https://t.me/EcoEmpire_test_bot?start=ref_${telegramId}`
+    : null;
 
   const handleSaveUsername = () => {
     if (newUsername.trim()) {
@@ -73,6 +80,11 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Telegram ID</label>
+            <div className="px-3 py-2 bg-gray-100 rounded-xl text-sm font-mono">{telegramId ?? 'Не привязан'}</div>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">Титул</label>
             <div className="flex items-center gap-2">
               <div className="px-3 py-2 bg-gray-100 rounded-xl text-sm text-gray-700 flex-1 min-h-[38px] flex items-center">
@@ -91,7 +103,6 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
           xp={game.getLevelProgress().currentXP}
           requiredXP={game.getLevelProgress().requiredXP}
           progress={game.getLevelProgress().progress}
-          onInfoClick={() => {}}
         />
       </div>
 
@@ -150,6 +161,12 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
       >
         🔗 Пригласить друзей
       </button>
+      <button
+        onClick={() => setShowReferrals(true)}
+        className="w-full mt-2 py-3 rounded-2xl border border-purple-300 text-purple-600 font-semibold hover:bg-purple-50 transition"
+      >
+        📋 Приглашённые друзья
+      </button>
 
       {/* Модалка выбора титула */}
       <AnimatePresence>
@@ -176,7 +193,7 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
 
               <div className="text-xs text-gray-600 mb-2">Некоторые титулы открываются с уровня или при подписке</div>
 
-              <TitleList 
+              <TitleList
                 currentTitle={state.title}
                 level={state.level}
                 subscription={state.subscription}
@@ -212,9 +229,9 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
               {/* Реферальная ссылка */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-600 mb-1">Ваша реферальная ссылка</label>
-                <div className="flex gap-2">
-                  <input readOnly value={referralLink} className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm" />
-                  <button onClick={() => navigator.clipboard.writeText(referralLink)} className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm">Копировать</button>
+                <div className="flex gap-2 flex-wrap">
+                  <input readOnly value={telegramReferralLink ?? referralLink} className="flex-1 min-w-[200px] px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+                  <button onClick={() => navigator.clipboard.writeText(telegramReferralLink ?? referralLink)} className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm">Копировать</button>
                 </div>
               </div>
 
@@ -222,20 +239,20 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
               <div className="bg-gray-50 rounded-xl p-3 mb-3">
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className="p-2 bg-white rounded-xl">
-                    <div className="text-xs text-gray-500">Приглашено друзей</div>
-                    <div className="text-lg font-bold text-[var(--primary)]">0</div>
+                    <div className="text-xs text-gray-500">Доход от друзей</div>
+                    <div className="text-lg font-bold text-[var(--primary)]">+{formatEco(state.referralStats?.totalIncome)} $ECO</div>
                   </div>
                   <div className="p-2 bg-white rounded-xl">
                     <div className="text-xs text-gray-500">Доход от продаж</div>
-                    <div className="text-lg font-bold text-green-600">+0 $ECO</div>
+                    <div className="text-lg font-bold text-green-600">+{formatEco(state.referralStats?.salesIncome)} $ECO</div>
                   </div>
                   <div className="p-2 bg-white rounded-xl">
                     <div className="text-xs text-gray-500">Доход от пополнений</div>
-                    <div className="text-lg font-bold text-green-600">+0 $ECO</div>
+                    <div className="text-lg font-bold text-green-600">+{formatEco(state.referralStats?.tonIncome)} $ECO</div>
                   </div>
                   <div className="p-2 bg-white rounded-xl">
-                    <div className="text-xs text-gray-500">Всего заработано</div>
-                    <div className="text-lg font-bold text-[var(--primary)]">+0 $ECO</div>
+                    <div className="text-xs text-gray-500">Количество приглашённых</div>
+                    <div className="text-lg font-bold text-[var(--primary)]">{state.referralStats?.count ?? 0}</div>
                   </div>
                 </div>
               </div>
@@ -251,6 +268,12 @@ export default function Profile({ game }: { game: ReturnType<typeof useGameLogic
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ReferralsModal
+        open={showReferrals}
+        onClose={() => setShowReferrals(false)}
+        game={game}
+      />
     </div>
   );
 }

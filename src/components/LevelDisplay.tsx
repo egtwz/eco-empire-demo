@@ -6,10 +6,9 @@ interface Props {
   xp: number;
   requiredXP: number;
   progress: number;
-  onInfoClick: () => void;
 }
 
-export default function LevelDisplay({ level, xp, requiredXP, progress, onInfoClick }: Props) {
+export default function LevelDisplay({ level, xp, requiredXP, progress }: Props) {
   const [showInfo, setShowInfo] = useState(false);
 
   return (

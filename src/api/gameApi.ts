@@ -1,29 +1,35 @@
 import { GameState } from '../hooks/useGameLogic';
 
+type ReferralSummary = {
+  telegramId: number;
+  username?: string;
+  playerId?: string;
+  title?: string;
+  level?: number;
+  balance?: number;
+  totalEarned?: number;
+  seedsPlanted?: number;
+  fruitsHarvested?: number;
+  hybridsCreated?: number;
+  dailyStreak?: number;
+  dailyCycleDay?: number;
+};
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-
-function appendDebugLog(message: string, data?: unknown) {
-  if (typeof window === 'undefined') return;
-  const container = document.getElementById('debug-log');
-  if (!container) return;
-
-  const timestamp = new Date().toLocaleTimeString();
-  const text = data ? `${message} ${JSON.stringify(data)}` : message;
-  container.textContent = `${container.textContent ? container.textContent + '\n' : ''}[${timestamp}] ${text}`;
-  container.scrollTop = container.scrollHeight;
-}
 
 class GameAPI {
   private tgId: number | null = null;
   private initData: string | null = null;
   private saving = false;
   private lastServerUpdatedAt: number | null = null;
+  private customStats: Record<string, unknown> = {};
 
   init(tgId: number, initData?: string | null) {
     this.tgId = tgId;
     if (typeof initData === 'string') {
       this.initData = initData;
     }
+    this.customStats = {};
   }
 
   setTelegramInitData(initData: string | null) {
@@ -77,6 +83,144 @@ class GameAPI {
     }
   }
 
+  async updateCustomStats(partial: Record<string, unknown>) {
+    if (!this.tgId) return;
+    this.customStats = { ...this.customStats, ...partial };
+
+    try {
+      await fetch(`${API_BASE_URL}/api/stats/update`, {
+        method: 'POST',
+        headers: this.buildHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          user_id: this.tgId,
+          inc_session: false,
+          time_spent: 0,
+          achievements: [],
+          custom_stats: this.customStats,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to update custom stats', error);
+    }
+  }
+
+  async grantReferralReward(type: 'sale' | 'ton', amount: number) {
+    if (!this.tgId || amount <= 0) return;
+    try {
+      await fetch(`${API_BASE_URL}/api/referrals/reward`, {
+        method: 'POST',
+        headers: this.buildHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ reason: type, amount }),
+      });
+    } catch (error) {
+      console.error('Failed to grant referral reward', error);
+    }
+  }
+
+  async getReferrals(): Promise<ReferralSummary[]> {
+    if (!this.tgId) return [];
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/referrals/${this.tgId}`, {
+        method: 'GET',
+        headers: this.buildHeaders(),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to load referrals: ${response.status}`);
+      }
+      const data = await response.json();
+      return Array.isArray(data?.referrals) ? data.referrals : [];
+    } catch (error) {
+      console.error('Failed to fetch referrals', error);
+      return [];
+    }
+  }
+
+  private buildMarketQuery(params: Record<string, any>) {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      search.append(key, String(value));
+    });
+    const qs = search.toString();
+    return qs ? `?${qs}` : '';
+  }
+
+  async listMarketOrders(params: {
+    currency: 'eco' | 'ton';
+    rarity?: string;
+    sort?: string;
+    itemId?: string;
+    itemType?: string;
+  }) {
+    if (!params?.currency) throw new Error('currency is required');
+    const qs = this.buildMarketQuery(params);
+    const response = await fetch(`${API_BASE_URL}/api/market/orders${qs}`, {
+      method: 'GET',
+      headers: this.buildHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to load orders: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  async listMyMarketOrders() {
+    const response = await fetch(`${API_BASE_URL}/api/market/orders/mine`, {
+      method: 'GET',
+      headers: this.buildHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to load my orders: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  async createMarketOrder(payload: {
+    itemId: string;
+    itemType: 'seed' | 'fruit' | 'currency';
+    rarity?: string;
+    price: number;
+    quantity: number;
+    currency: 'eco' | 'ton';
+    metadata?: { name?: string; emoji?: string };
+  }) {
+    const response = await fetch(`${API_BASE_URL}/api/market/orders`, {
+      method: 'POST',
+      headers: this.buildHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Failed to create order (${response.status})`);
+    }
+    return response.json();
+  }
+
+  async buyMarketOrder(orderId: number, quantity: number) {
+    const response = await fetch(`${API_BASE_URL}/api/market/orders/${orderId}/buy`, {
+      method: 'POST',
+      headers: this.buildHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ quantity }),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Failed to buy order (${response.status})`);
+    }
+    return response.json();
+  }
+
+  async cancelMarketOrder(orderId: number) {
+    const response = await fetch(`${API_BASE_URL}/api/market/orders/${orderId}/cancel`, {
+      method: 'POST',
+      headers: this.buildHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Failed to cancel order (${response.status})`);
+    }
+    return response.json();
+  }
+
   async getUserData(): Promise<GameState | null> {
     if (!this.tgId) return null;
 
@@ -110,8 +254,8 @@ class GameAPI {
     return cached;
   }
 
-  async saveUserData(gameState: GameState): Promise<void> {
-    if (!this.tgId) return;
+  async saveUserData(gameState: GameState): Promise<GameState | null> {
+    if (!this.tgId) return null;
 
     this.saving = true;
     const updatedAt = Date.now();
@@ -123,7 +267,6 @@ class GameAPI {
       updatedAt,
     };
     console.log('[gameAPI] saveUserData start', startPayload);
-    appendDebugLog('[save start]', startPayload);
 
     try {
       const payload: any = {
@@ -138,8 +281,6 @@ class GameAPI {
       const url = this.getSaveUrl();
       const headers = this.buildHeaders({ 'Content-Type': 'application/json' });
       const body = JSON.stringify(payload);
-
-      appendDebugLog('[save request]', { url, headers, body });
 
       const response = await fetch(url, {
         method: 'PUT',
@@ -157,13 +298,18 @@ class GameAPI {
       }
 
       console.log('[gameAPI] saveUserData response', response.status, errorText);
-      appendDebugLog('[save response]', { status: response.status, body: errorText });
 
       if (response.status === 409) {
-        const conflict = await response.json();
+        let conflict: any = {};
+        try {
+          conflict = await response.json();
+        } catch (e) {
+          conflict = {};
+        }
         this.lastServerUpdatedAt = conflict.updated_at ?? this.lastServerUpdatedAt;
-        console.warn('Server state is newer, consider resolving conflict');
-        return;
+        console.warn('Server state is newer, reloading latest save');
+        const latest = await this.getUserData();
+        return latest;
       }
 
       if (!response.ok) {
@@ -172,8 +318,10 @@ class GameAPI {
 
       const result = await response.json();
       this.lastServerUpdatedAt = result?.updated_at ?? updatedAt;
+      return null;
     } catch (error) {
       console.error('Failed to save user data to API', error);
+      return null;
     } finally {
       this.saving = false;
     }

@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '../hooks/useGameLogic';
-import { RARITY_COLORS } from '../data/seeds';
 import { SEEDS } from '../data/seeds';
 import { FRUITS } from '../data/fruits';
 
@@ -50,21 +49,6 @@ export default function IngredientSelector({ open, ingredient, onClose, onSelect
       setSelectedCount(1);
       onClose();
     }
-  };
-
-  const getRarityColor = (rarity: string) => {
-    return RARITY_COLORS[rarity as keyof typeof RARITY_COLORS] || '#9CA3AF';
-  };
-
-  const getRarityName = (rarity: string) => {
-    const names = {
-      common: 'Обычная',
-      uncommon: 'Необычная',
-      rare: 'Редкая',
-      epic: 'Эпическая',
-      legendary: 'Легендарная'
-    };
-    return names[rarity as keyof typeof names] || 'Неизвестная';
   };
 
   if (!ingredient) return null;

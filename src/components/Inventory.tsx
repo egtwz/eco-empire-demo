@@ -5,7 +5,7 @@ import { RARITY_COLORS } from '../data/seeds';
 import { getFruitInfo } from '../utils/hybridUtils';
 import ItemActionModal from './ItemActionModal';
 import HybridCrafting from './HybridCrafting';
-import { SYNTHESIS_PLANTS, SYNTHESIS_RECIPES, SynthesisRarity } from '../data/synthesis';
+import { SYNTHESIS_PLANTS, SYNTHESIS_RECIPES } from '../data/synthesis';
 
 type FilterBy = 'all' | 'seeds' | 'fruits' | 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 type Tab = 'inventory' | 'crafting' | 'synthesis';
@@ -50,10 +50,6 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
       return a.type.localeCompare(b.type);
     });
   }, [state.inventory, filterBy]);
-
-  const getRarityColor = (rarity: string) => {
-    return RARITY_COLORS[rarity as keyof typeof RARITY_COLORS] || '#9CA3AF';
-  };
 
   const getRarityName = (rarity: string) => {
     const names = {
@@ -199,40 +195,61 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
                   <div className="flex items-center gap-3">
                     <div className="text-2xl">{item.emoji}</div>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="text-sm font-medium">{item.name}</div>
-                        {(item as any).rarity && (
-                          <div 
-                            className="px-2 py-0.5 rounded-full text-xs text-white"
-                            style={{ backgroundColor: getRarityColor((item as any).rarity) }}
-                          >
-                            {getRarityName((item as any).rarity)}
-                          </div>
-                        )}
-                      </div>
+                      <div className="text-sm font-semibold">{item.name}</div>
                       <div className="text-xs text-gray-500">
-                        {item.type === 'seed' ? 'Семена' : item.type === 'fruit' ? 'Плоды' : 'Усилители'} • ×{item.count}
+                        {item.type === 'seed' ? 'Семена' : item.type === 'fruit' ? 'Плоды' : 'Предмет'} • {item.count} шт
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold text-[var(--primary)]">×{item.count}</div>
-                      <div className="text-xs text-gray-400 mt-1">Нажмите для действий</div>
+                    <div className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                      {getRarityName((item as any).rarity || 'common')}
                     </div>
                   </div>
                 </div>
               ))}
             </div>
 
-            {filterBy === 'all' && (
-              <button
-                onClick={() => setShowSellAllModal(true)}
-                disabled={getTotalFruitValue() === 0}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-md active:scale-95 transition-all"
-              >
-                💰 Продать все плоды ({getTotalFruitValue().toLocaleString()} $ECO)
-              </button>
+            {state.marketLocked && state.marketLocked.length > 0 && (
+              <div className="mt-4">
+                <div className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                  <span>🔒 На бирже</span>
+                  <button
+                    onClick={() => game.setView('exchange')}
+                    className="text-xs px-2 py-1 rounded-lg bg-purple-100 text-purple-600 hover:bg-purple-200"
+                  >
+                    Открыть биржу
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {state.marketLocked.map((locked) => (
+                    <div key={locked.orderId} className="p-3 rounded-2xl bg-gray-50 border border-gray-200">
+                      <div className="flex items-center gap-3">
+                        <div className="text-2xl">{locked.emoji || (locked.itemType === 'currency' ? '💵' : '🔒')}</div>
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold text-gray-800">
+                            {locked.itemType === 'currency' ? '$ECO' : locked.name || locked.itemId}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Заявка #{locked.orderId} • {locked.quantity} шт • Валюта: {locked.currency === 'ton' ? 'TON' : '$ECO'}
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-400">Недоступно</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
+
+          {filterBy === 'all' && (
+            <button
+              onClick={() => setShowSellAllModal(true)}
+              disabled={getTotalFruitValue() === 0}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-md active:scale-95 transition-all"
+            >
+              💰 Продать все плоды ({getTotalFruitValue().toLocaleString()} $ECO)
+            </button>
+          )}
         </>
       )}
 

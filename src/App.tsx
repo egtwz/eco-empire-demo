@@ -11,10 +11,16 @@ import { useGameLogic } from './hooks/useGameLogic';
 import { useTelegram } from './hooks/useTelegram';
 import './styles.css';
 
+const MOBILE_UA_REGEX = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+
 export default function App() {
-  const { user: telegramUser, isReady: telegramReady, initData } = useTelegram();
+  const initialMobile = typeof navigator === 'undefined'
+    ? true
+    : MOBILE_UA_REGEX.test(navigator.userAgent) || (typeof window !== 'undefined' && window.innerWidth <= 768);
+  const [isMobile, setIsMobile] = useState(initialMobile);
+  const { user: telegramUser, isReady: telegramReady, initData, startParam } = useTelegram();
   const [tgId, setTgId] = useState<number | undefined>();
-  const game = useGameLogic(tgId, initData);
+  const game = useGameLogic(tgId, initData, startParam);
   const [showSplash, setShowSplash] = useState(true);
   const tips = useMemo(() => [
     '💡 Совет: Сначала сажайте быстрые семена для старта',
@@ -25,6 +31,15 @@ export default function App() {
     '⚡ Совет: Используйте ускорители для быстрого роста',
   ], []);
   const [tipIndex, setTipIndex] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkMobile = () => MOBILE_UA_REGEX.test(navigator.userAgent) || window.innerWidth <= 768;
+    setIsMobile(checkMobile());
+    const handleResize = () => setIsMobile(checkMobile());
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (telegramUser?.id) {
@@ -50,6 +65,20 @@ export default function App() {
       clearInterval(tipTimer);
     };
   }, [tips.length]);
+
+  if (!isMobile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-6 text-center">
+        <div className="max-w-sm w-full bg-white rounded-3xl shadow-2xl p-8 space-y-4">
+          <div className="text-6xl">🌿</div>
+          <div className="text-2xl font-bold text-gray-800">EcoEmpire</div>
+          <div className="text-sm text-gray-600">
+            Приложение доступно только на мобильных устройствах. Откройте EcoEmpire в Telegram на своём телефоне.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (showSplash || game.isLoading) {
     return (
@@ -81,10 +110,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
-      <div className="fixed bottom-2 left-2 z-50 max-w-xs rounded-xl bg-black/80 text-white text-xs px-3 py-2 space-y-1 font-mono">
-        <div className="font-semibold">user.id: {telegramUser?.id ?? '—'}</div>
-        <div className="border-t border-white/20 pt-1 text-[10px] max-h-40 overflow-y-auto" id="debug-log"></div>
-      </div>
       <Header balance={game.state.balance} view={game.view} setView={game.setView} game={game} />
       
       {/* Контент с отступом сверху и снизу */}
@@ -93,7 +118,7 @@ export default function App() {
         {game.view === 'shop' && <Shop game={game} />}
         {game.view === 'inventory' && <Inventory game={game} />}
         {game.view === 'exchange' && <Exchange game={game} />}
-        {game.view === 'profile' && <Profile game={game} />}
+        {game.view === 'profile' && <Profile game={game} telegramId={tgId} />}
       </div>
 
       <Navigation view={game.view} setView={game.setView} />
