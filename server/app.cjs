@@ -190,12 +190,32 @@ app.put('/api/save/:user_id', ensureTelegramAuth, parseUserId, async (req, res) 
   const { save_data, updated_at, last_client_known } = req.body || {};
   if (!save_data || !updated_at) return res.status(400).json({ error: 'Missing payload' });
   try {
+    // КРИТИЧНО: Проверяем текущее состояние в БД
     const existing = await pool.query(
-      'select updated_at from user_saves where user_id = $1',
+      'select save_data, updated_at from user_saves where user_id = $1',
       [req.params.user_id]
     );
+    
+    // Если данные на сервере новее, чем last_client_known - это конфликт
+    // Это может быть сохранение после покупки на рынке, которое клиент еще не видел
     if (existing.rowCount && existing.rows[0].updated_at > (last_client_known || 0)) {
-      return res.status(409).json({ error: 'Conflict', updated_at: existing.rows[0].updated_at });
+      console.log(`[app.cjs PUT save] Conflict detected for user ${req.params.user_id}: server updated_at=${existing.rows[0].updated_at}, client known=${last_client_known || 0}`);
+      return res.status(409).json({ 
+        error: 'Conflict', 
+        updated_at: existing.rows[0].updated_at,
+        save_data: existing.rows[0].save_data // Возвращаем актуальные данные с сервера
+      });
+    }
+
+    // Если updated_at клиента НОВЕЕ или РАВЕН серверному - сохраняем
+    // Но проверяем, что не перезаписываем данные рынка (если updated_at клиента старше серверного)
+    if (existing.rowCount && existing.rows[0].updated_at && updated_at < existing.rows[0].updated_at) {
+      console.warn(`[app.cjs PUT save] WARNING: Client trying to save older data for user ${req.params.user_id}: client=${updated_at}, server=${existing.rows[0].updated_at}`);
+      return res.status(409).json({ 
+        error: 'Conflict', 
+        updated_at: existing.rows[0].updated_at,
+        save_data: existing.rows[0].save_data
+      });
     }
 
     await pool.query(
@@ -564,6 +584,10 @@ app.post('/api/market/orders/:order_id/buy', ensureTelegramAuth, async (req, res
         sellerSave.tonBalance = roundAmount((sellerSave.tonBalance ?? 0) + sellerReceives);
       }
 
+      // КРИТИЧНО: Сохраняем балансы ДО изменений для логирования
+      const sellerBalanceBefore = order.currency === 'eco' ? (sellerSave.balance ?? 0) : (sellerSave.tonBalance ?? 0);
+      const buyerBalanceBefore = order.currency === 'eco' ? (buyerSave.balance ?? 0) : (buyerSave.tonBalance ?? 0);
+
       const lockedArraySeller = ensureMarketLocked(sellerSave);
       adjustMarketLocked(lockedArraySeller, orderId, (entry) => {
         const remaining = Number(entry.quantity || 0) - tradeQty;
@@ -588,16 +612,48 @@ app.post('/api/market/orders/:order_id/buy', ensureTelegramAuth, async (req, res
         buyerSave.inventory = buyerInventory;
       }
 
-      sellerSave.inventory = cloneInventory(sellerSave);
+      // КРИТИЧНО: НЕ клонируем inventory продавца - это перезаписывает изменения баланса!
+      // sellerSave.inventory уже существует и не меняется при покупке
 
+      // КРИТИЧНО: Создаем НОВЫЕ объекты через JSON.stringify/parse для гарантии сохранения
       const nowTs = currentTimestamp();
-      await client.query(
-        'UPDATE user_saves SET save_data = $2, updated_at = $3 WHERE user_id = $1',
-        [order.user_id, sellerSave, nowTs]
+      const sellerSaveToSave = JSON.parse(JSON.stringify(sellerSave));
+      const buyerSaveToSave = JSON.parse(JSON.stringify(buyerSave));
+      
+      // Проверяем балансы после изменений
+      const sellerBalanceAfter = order.currency === 'eco' ? sellerSaveToSave.balance : sellerSaveToSave.tonBalance;
+      
+      console.log(`[app.cjs market buy] Seller ${order.user_id}: balance ${sellerBalanceBefore} -> ${sellerBalanceAfter} (+${sellerReceives}), currency=${order.currency}`);
+      console.log(`[app.cjs market buy] Buyer ${req.telegramUser.id}: balance ${buyerBalanceBefore} -> ${order.currency === 'eco' ? buyerSaveToSave.balance : buyerSaveToSave.tonBalance} (-${buyerPays})`);
+      
+      // КРИТИЧНО: Увеличиваем timestamp на 10ms чтобы гарантировать, что это сохранение будет самым новым
+      // Это предотвратит перезапись автосохранением продавца
+      const sellerUpdatedAt = nowTs + 10;
+      
+      // Сохраняем продавца СРАЗУ с явным приведением к JSONB и повышенным timestamp
+      const sellerResult = await client.query(
+        'UPDATE user_saves SET save_data = $2::jsonb, updated_at = $3 WHERE user_id = $1 RETURNING save_data, updated_at',
+        [order.user_id, JSON.stringify(sellerSaveToSave), sellerUpdatedAt]
       );
+      
+      // Проверяем, что данные сохранились правильно
+      if (sellerResult.rows && sellerResult.rows[0] && sellerResult.rows[0].save_data) {
+        const savedBalance = order.currency === 'eco' 
+          ? (sellerResult.rows[0].save_data.balance ?? 0)
+          : (sellerResult.rows[0].save_data.tonBalance ?? 0);
+        const savedUpdatedAt = sellerResult.rows[0].updated_at;
+        console.log(`[app.cjs market buy] Seller data verified in DB: balance=${savedBalance}, updated_at=${savedUpdatedAt}`);
+        if (Math.abs(savedBalance - sellerBalanceAfter) > 0.001) {
+          console.error(`[app.cjs market buy] ERROR: Seller balance mismatch! Expected=${sellerBalanceAfter}, Got=${savedBalance}`);
+        }
+      } else {
+        console.error(`[app.cjs market buy] ERROR: Seller data not saved! No rows returned.`);
+      }
+      
+      // Сохраняем покупателя
       await client.query(
-        'UPDATE user_saves SET save_data = $2, updated_at = $3 WHERE user_id = $1',
-        [req.telegramUser.id, buyerSave, nowTs]
+        'UPDATE user_saves SET save_data = $2::jsonb, updated_at = $3 WHERE user_id = $1',
+        [req.telegramUser.id, JSON.stringify(buyerSaveToSave), nowTs]
       );
 
       const remaining = quantityLeft - tradeQty;
@@ -620,6 +676,22 @@ app.post('/api/market/orders/:order_id/buy', ensureTelegramAuth, async (req, res
       );
 
       await client.query('COMMIT');
+      
+      // ФИНАЛЬНАЯ ПРОВЕРКА: После коммита читаем данные из БД чтобы убедиться что все сохранилось
+      const finalCheck = await pool.query(
+        'SELECT save_data, updated_at FROM user_saves WHERE user_id = $1',
+        [order.user_id]
+      );
+      if (finalCheck.rows && finalCheck.rows[0]) {
+        const finalBalance = order.currency === 'eco' 
+          ? (finalCheck.rows[0].save_data.balance ?? 0)
+          : (finalCheck.rows[0].save_data.tonBalance ?? 0);
+        console.log(`[app.cjs market buy] FINAL CHECK: Seller ${order.user_id} balance in DB after COMMIT: ${finalBalance}, updated_at: ${finalCheck.rows[0].updated_at}`);
+        if (Math.abs(finalBalance - sellerBalanceAfter) > 0.001) {
+          console.error(`[app.cjs market buy] CRITICAL ERROR: Final balance mismatch! Expected=${sellerBalanceAfter}, Got=${finalBalance}`);
+        }
+      }
+      
       return res.json({
         ok: true,
         orderId,

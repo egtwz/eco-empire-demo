@@ -25,15 +25,12 @@ export default function Navigation({ view, setView }: Props) {
             
             <button
               onClick={() => setView('exchange')}
-              className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl transition-all ${
-                view === 'exchange' 
-                  ? 'bg-gradient-to-br from-[var(--primary)] to-[var(--secondary)] text-white shadow-md scale-105' 
-                  : 'bg-gray-100 hover:bg-gray-200'
-              }`}
+              className="flex flex-col items-center justify-center px-3 py-2 rounded-xl transition-all bg-gray-100 opacity-60 cursor-not-allowed"
               style={{ minWidth: '65px', minHeight: '70px' }}
+              disabled
             >
-              <span className="text-2xl mb-1">📈</span>
-              <span className="text-xs font-medium">Биржа</span>
+              <span className="text-2xl mb-1">🔨</span>
+              <span className="text-xs font-medium">В разработке</span>
             </button>
           </div>
 

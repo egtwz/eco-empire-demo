@@ -36,7 +36,6 @@ export default function TonInfoModal({ open, onClose }: { open: boolean; onClose
                 <li>Покупка $ECO токенов</li>
                 <li>Покупка улучшений и бустеров</li>
                 <li>Приобретение подписки Premium</li>
-                <li>Участие в торгах на бирже</li>
               </ul>
             </div>
           </motion.div>

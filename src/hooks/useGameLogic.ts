@@ -317,10 +317,6 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
         } else {
           baseState = stateRef.current;
         }
-        if (baseState && !baseState.marketLocked) {
-          baseState.marketLocked = [];
-          setState(baseState);
-        }
         stateRef.current = baseState ?? stateRef.current;
         setIsLoading(false);
       });
@@ -830,7 +826,6 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
       dailyCycleDay: 0,
       referrerId: null,
       referralStats: { totalIncome: 0, salesIncome: 0, tonIncome: 0, count: 0 },
-      marketLocked: [],
       synthesisActive: []
     }));
   }, []);
@@ -1053,9 +1048,15 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
   const reloadFromServer = useCallback(async () => {
     if (!tgId) return;
     try {
+      // КРИТИЧНО: Принудительно загружаем данные с сервера, игнорируя локальный кэш
+      // Это гарантирует получение актуальных данных после покупки/продажи
       const saved = await gameAPI.getUserData();
       if (saved) {
-        stateRef.current = applyServerState(saved);
+        // Обновляем как внутренний ref, так и состояние компонента
+        const newState = applyServerState(saved);
+        stateRef.current = newState;
+        // Принудительно обновляем состояние, чтобы UI отобразил новые данные
+        setState(newState);
       }
     } catch (error) {
       console.error('Failed to reload state from server', error);
@@ -1106,11 +1107,6 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
     getReferrals: gameAPI.getReferrals,
     setReferralCount,
     reloadFromServer,
-    listMarketOrders: (params: Parameters<typeof gameAPI.listMarketOrders>[0]) => gameAPI.listMarketOrders(params),
-    listMyMarketOrders: () => gameAPI.listMyMarketOrders(),
-    createMarketOrder: (payload: Parameters<typeof gameAPI.createMarketOrder>[0]) => gameAPI.createMarketOrder(payload),
-    buyMarketOrder: (orderId: number, quantity: number) => gameAPI.buyMarketOrder(orderId, quantity),
-    cancelMarketOrder: (orderId: number) => gameAPI.cancelMarketOrder(orderId),
     telegramId: tgId,
      
    } as const;

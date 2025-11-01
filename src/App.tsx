@@ -4,7 +4,6 @@ import Navigation from './components/Navigation';
 import Field from './components/Field';
 import Inventory from './components/Inventory';
 import Shop from './components/Shop';
-import Exchange from './components/Exchange';
 import Profile from './components/Profile';
 import BoosterNotificationModal from './components/BoosterNotificationModal';
 import { useGameLogic } from './hooks/useGameLogic';
@@ -25,7 +24,7 @@ export default function App() {
   const tips = useMemo(() => [
     '💡 Совет: Сначала сажайте быстрые семена для старта',
     '🌱 Совет: Улучшайте поле, чтобы выращивать больше',
-    '💰 Совет: Продавайте лишнее на обмене за $ECO',
+    '💰 Совет: Продавайте плоды в магазине за $ECO',
     '⏰ Совет: Следите за временем роста и собирайте вовремя',
     '🔬 Совет: Создавайте гибриды для увеличения дохода',
     '⚡ Совет: Используйте ускорители для быстрого роста',
@@ -117,7 +116,13 @@ export default function App() {
         {game.view === 'field' && <Field game={game} />}
         {game.view === 'shop' && <Shop game={game} />}
         {game.view === 'inventory' && <Inventory game={game} />}
-        {game.view === 'exchange' && <Exchange game={game} />}
+        {game.view === 'exchange' && (
+          <div className="max-w-md mx-auto p-6 text-center">
+            <div className="text-6xl mb-4">🔨</div>
+            <div className="text-2xl font-bold text-gray-800 mb-2">В разработке</div>
+            <div className="text-gray-600">Раздел биржи находится в разработке</div>
+          </div>
+        )}
         {game.view === 'profile' && <Profile game={game} telegramId={tgId} />}
       </div>
 
