@@ -5,7 +5,7 @@ import { RARITY_COLORS } from '../data/seeds';
 import { getFruitInfo } from '../utils/hybridUtils';
 import ItemActionModal from './ItemActionModal';
 import HybridCrafting from './HybridCrafting';
-import { SYNTHESIS_PLANTS, SYNTHESIS_RECIPES, SynthesisRarity } from '../data/synthesis';
+import { SYNTHESIS_PLANTS, SYNTHESIS_RECIPES } from '../data/synthesis';
 
 type FilterBy = 'all' | 'seeds' | 'fruits' | 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 type Tab = 'inventory' | 'crafting' | 'synthesis';

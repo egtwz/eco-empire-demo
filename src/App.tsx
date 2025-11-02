@@ -6,6 +6,8 @@ import Inventory from './components/Inventory';
 import Shop from './components/Shop';
 import Profile from './components/Profile';
 import BoosterNotificationModal from './components/BoosterNotificationModal';
+import DealerQuests from './components/DealerQuests';
+import DealerQuestNotificationModal from './components/DealerQuestNotificationModal';
 import { useGameLogic } from './hooks/useGameLogic';
 import { useTelegram } from './hooks/useTelegram';
 import './styles.css';
@@ -116,13 +118,7 @@ export default function App() {
         {game.view === 'field' && <Field game={game} />}
         {game.view === 'shop' && <Shop game={game} />}
         {game.view === 'inventory' && <Inventory game={game} />}
-        {game.view === 'exchange' && (
-          <div className="max-w-md mx-auto p-6 text-center">
-            <div className="text-6xl mb-4">🔨</div>
-            <div className="text-2xl font-bold text-gray-800 mb-2">В разработке</div>
-            <div className="text-gray-600">Раздел биржи находится в разработке</div>
-          </div>
-        )}
+        {game.view === 'exchange' && <DealerQuests game={game} />}
         {game.view === 'profile' && <Profile game={game} telegramId={tgId} />}
       </div>
 
@@ -131,6 +127,11 @@ export default function App() {
       <BoosterNotificationModal
         notification={game.boosterNotification}
         onClose={game.clearBoosterNotification}
+      />
+
+      <DealerQuestNotificationModal
+        notification={game.dealerQuestNotification}
+        onClose={game.clearDealerQuestNotification}
       />
     </div>
   );

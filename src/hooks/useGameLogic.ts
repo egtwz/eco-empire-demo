@@ -6,6 +6,7 @@ import { HYBRID_RECIPES } from '../data/hybrids';
 import { SYNTHESIS_PLANTS } from '../data/synthesis';
 import { BOOSTERS, BoosterId } from '../data/boosters';
 import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
+import { getQuestById, ALL_DEALER_QUESTS } from '../data/dealerQuests';
 
 const DAILY_CYCLE_LENGTH = 15;
 
@@ -88,6 +89,25 @@ export interface GameState {
   };
   marketLocked?: MarketLockedEntry[];
   synthesisActive?: Array<{ cellId: number; plantId: string; startTime: number; willSucceed: boolean }>; // синтез активен
+  // Система квестов скупщика
+  dealerLevel?: number; // Уровень скупщика (1-7)
+  dealerXP?: number; // Текущий опыт скупщика
+  dealerActiveQuest?: string | null; // ID активного квеста
+  dealerQuestProgress?: Record<string, number>; // Прогресс по квестам: { questId: progress }
+  dealerCompletedQuests?: string[]; // Массив ID выполненных квестов
+  dealerQuestPages?: Record<number, string[]>; // Квесты на страницах: { page: [questId1, questId2, ...] }
+  dealerQuestNotificationsShown?: string[]; // ID квестов, для которых уже показано уведомление
+  dealerQuestStartAmounts?: Record<string, number>; // Начальная сумма продаж для квестов "sell_amount": { questId: startAmount }
+  // Счетчики для отслеживания прогресса квестов
+  dealerQuestCounters?: {
+    plantSeeds?: Record<string, number>; // { seedId: count }
+    sellFruits?: Record<string, number>; // { fruitId: count }
+    sellAmount?: number; // Общая сумма проданного
+    harvestSeeds?: Record<string, number>; // { seedId: count }
+    createHybrids?: number;
+    doSynthesis?: number;
+    useBoosters?: Record<string, number>; // { boosterId: count }
+  };
 }
 
 export type View = 'field' | 'shop' | 'inventory' | 'exchange' | 'profile';
@@ -96,6 +116,13 @@ export interface BoosterNotification {
   boosterId: BoosterId;
   name: string;
   emoji: string;
+  message: string;
+}
+
+export interface DealerQuestNotification {
+  questId: string;
+  questName: string;
+  questEmoji: string;
   message: string;
 }
 
@@ -209,6 +236,38 @@ function normalizeSaveData(saved: any): GameState {
   const savedReferrer = safeNumber(saved?.referrerId);
   const savedRefStats = normalizeReferralStats(saved?.referralStats);
 
+  // Нормализация квестов скупщика - удаление дубликатов
+  const rawDealerQuestPages = saved.dealerQuestPages || {};
+  const normalizedDealerQuestPages: Record<number, string[]> = {};
+  const allUsedQuestIds = new Set<string>();
+  
+  // Проходим по всем страницам и удаляем дубликаты
+  for (let page = 1; page <= 6; page++) {
+    const pageQuests = Array.isArray(rawDealerQuestPages[page]) ? rawDealerQuestPages[page] : [];
+    const uniqueQuests: string[] = [];
+    const pageQuestIds = new Set<string>();
+    
+    for (const questId of pageQuests) {
+      if (typeof questId === 'string' && !allUsedQuestIds.has(questId) && !pageQuestIds.has(questId)) {
+        // Проверяем, что квест существует
+        const quest = getQuestById(questId);
+        if (quest && quest.page === page) {
+          uniqueQuests.push(questId);
+          allUsedQuestIds.add(questId);
+          pageQuestIds.add(questId);
+        }
+      }
+    }
+    
+    if (uniqueQuests.length > 0 || page === 1) {
+      normalizedDealerQuestPages[page] = uniqueQuests;
+    }
+  }
+
+  // Нормализуем выполненные квесты - удаляем дубликаты
+  const rawCompletedQuests = Array.isArray(saved.dealerCompletedQuests) ? saved.dealerCompletedQuests : [];
+  const normalizedCompletedQuests: string[] = Array.from(new Set(rawCompletedQuests.filter((id: any) => typeof id === 'string')));
+
   return {
     field: restoredField,
     inventory: Array.isArray(saved.inventory) ? saved.inventory : [],
@@ -236,6 +295,24 @@ function normalizeSaveData(saved: any): GameState {
     referralStats: savedRefStats,
     marketLocked: Array.isArray(saved.marketLocked) ? saved.marketLocked : [],
     synthesisActive: Array.isArray(saved.synthesisActive) ? saved.synthesisActive : [],
+    // Данные квестов скупщика
+    dealerLevel: saved.dealerLevel ?? 1,
+    dealerXP: saved.dealerXP ?? 0,
+    dealerActiveQuest: saved.dealerActiveQuest ?? null,
+    dealerQuestProgress: saved.dealerQuestProgress ?? {},
+    dealerCompletedQuests: normalizedCompletedQuests,
+    dealerQuestPages: normalizedDealerQuestPages,
+    dealerQuestNotificationsShown: Array.isArray(saved.dealerQuestNotificationsShown) ? saved.dealerQuestNotificationsShown : [],
+    dealerQuestStartAmounts: saved.dealerQuestStartAmounts && typeof saved.dealerQuestStartAmounts === 'object' ? saved.dealerQuestStartAmounts : {},
+    dealerQuestCounters: {
+      plantSeeds: saved.dealerQuestCounters?.plantSeeds ?? {},
+      sellFruits: saved.dealerQuestCounters?.sellFruits ?? {},
+      sellAmount: saved.dealerQuestCounters?.sellAmount ?? 0,
+      harvestSeeds: saved.dealerQuestCounters?.harvestSeeds ?? {},
+      createHybrids: saved.dealerQuestCounters?.createHybrids ?? 0,
+      doSynthesis: saved.dealerQuestCounters?.doSynthesis ?? 0,
+      useBoosters: saved.dealerQuestCounters?.useBoosters ?? {},
+    },
   };
 }
 
@@ -267,6 +344,23 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
     referralStats: { totalIncome: 0, salesIncome: 0, tonIncome: 0, count: 0 },
     marketLocked: [],
     synthesisActive: [],
+    dealerLevel: 1,
+    dealerXP: 0,
+    dealerActiveQuest: null,
+    dealerQuestProgress: {},
+    dealerCompletedQuests: [],
+    dealerQuestPages: {},
+    dealerQuestNotificationsShown: [],
+    dealerQuestStartAmounts: {},
+    dealerQuestCounters: {
+      plantSeeds: {},
+      sellFruits: {},
+      sellAmount: 0,
+      harvestSeeds: {},
+      createHybrids: 0,
+      doSynthesis: 0,
+      useBoosters: {},
+    },
   }));
 
   const [view, setView] = useState<View>('field');
@@ -274,6 +368,7 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
   const tickRef = useRef<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [boosterNotification, setBoosterNotification] = useState<BoosterNotification | null>(null);
+  const [dealerQuestNotification, setDealerQuestNotification] = useState<DealerQuestNotification | null>(null);
   const stateRef = useRef(state);
 
   useEffect(() => {
@@ -427,11 +522,29 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
         emoji: seedDef.emoji,
         count: 0,
       });
+
+      // Обновляем счетчик квестов (посадить семена)
+      const counters = prev.dealerQuestCounters || {
+        plantSeeds: {},
+        sellFruits: {},
+        sellAmount: 0,
+        harvestSeeds: {},
+        createHybrids: 0,
+        doSynthesis: 0,
+        useBoosters: {},
+      };
+      const newPlantSeeds = { ...counters.plantSeeds };
+      newPlantSeeds[seedId] = (newPlantSeeds[seedId] || 0) + 1;
+
       return { 
         ...prev, 
         field: nextField, 
         inventory: nextInv,
-        seedsPlanted: prev.seedsPlanted + 1
+        seedsPlanted: prev.seedsPlanted + 1,
+        dealerQuestCounters: {
+          ...counters,
+          plantSeeds: newPlantSeeds,
+        },
       };
     });
     setSeedSelectForCell(null);
@@ -472,13 +585,30 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
       const newLevel = newXP >= requiredXP && prev.level < MAX_LEVEL ? prev.level + 1 : prev.level;
       const finalXP = newLevel > prev.level ? 0 : newXP; // при повышении уровня XP обнуляем, т.к. пороги абсолютные
 
+      // Обновляем счетчик квестов (вырастить семена)
+      const counters = prev.dealerQuestCounters || {
+        plantSeeds: {},
+        sellFruits: {},
+        sellAmount: 0,
+        harvestSeeds: {},
+        createHybrids: 0,
+        doSynthesis: 0,
+        useBoosters: {},
+      };
+      const newHarvestSeeds = { ...counters.harvestSeeds };
+      newHarvestSeeds[cell.seed] = (newHarvestSeeds[cell.seed] || 0) + 1;
+
       return { 
         ...prev, 
         field: nextField, 
         inventory: nextInv,
         fruitsHarvested: prev.fruitsHarvested + 1,
         xp: finalXP,
-        level: newLevel
+        level: newLevel,
+        dealerQuestCounters: {
+          ...counters,
+          harvestSeeds: newHarvestSeeds,
+        },
       };
     });
   }, []);
@@ -511,7 +641,12 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
       if (!fruit || count <= 0) return prev;
       const invItem = getItem(prev.inventory, fruitId);
       if (!invItem || invItem.count < count) return prev;
-      const income = fruit.sellPrice * count;
+      
+      // Применяем множитель скупщика
+      const dealerMultiplier = prev.dealerLevel ? (1 + (prev.dealerLevel - 1) * 0.05) : 1;
+      const baseIncome = fruit.sellPrice * count;
+      const income = roundCurrency(baseIncome * dealerMultiplier);
+      
       if (prev.referrerId && income > 0) {
         referralReward = Math.floor(income * 0.05);
         if (referralReward === 0) {
@@ -525,11 +660,30 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
         emoji: fruit.emoji,
         count: 0,
       });
+
+      // Обновляем счетчики квестов (продать плоды и сумму)
+      const counters = prev.dealerQuestCounters || {
+        plantSeeds: {},
+        sellFruits: {},
+        sellAmount: 0,
+        harvestSeeds: {},
+        createHybrids: 0,
+        doSynthesis: 0,
+        useBoosters: {},
+      };
+      const newSellFruits = { ...counters.sellFruits };
+      newSellFruits[fruitId] = (newSellFruits[fruitId] || 0) + count;
+
       return withRoundedBalances({ 
         ...prev, 
         inventory: nextInv, 
         balance: roundCurrency(prev.balance + income),
-        totalEarned: prev.totalEarned + income
+        totalEarned: prev.totalEarned + income,
+        dealerQuestCounters: {
+          ...counters,
+          sellFruits: newSellFruits,
+          sellAmount: (counters.sellAmount || 0) + income,
+        },
       });
     });
 
@@ -739,7 +893,28 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
       }
 
       const nextInventory = addCount(prev.inventory, boosterId, -1, boosterFallback(boosterId));
-      return { ...stateAfterEffect, inventory: nextInventory };
+      
+      // Обновляем счетчик квестов (использовать бустер)
+      const counters = prev.dealerQuestCounters || {
+        plantSeeds: {},
+        sellFruits: {},
+        sellAmount: 0,
+        harvestSeeds: {},
+        createHybrids: 0,
+        doSynthesis: 0,
+        useBoosters: {},
+      };
+      const newUseBoosters = { ...counters.useBoosters };
+      newUseBoosters[boosterId] = (newUseBoosters[boosterId] || 0) + 1;
+
+      return { 
+        ...stateAfterEffect, 
+        inventory: nextInventory,
+        dealerQuestCounters: {
+          ...counters,
+          useBoosters: newUseBoosters,
+        },
+      };
     });
 
     if (notificationMessage) {
@@ -929,11 +1104,26 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
         count: 0,
       });
 
+      // Обновляем счетчик квестов (создать гибрид)
+      const counters = prev.dealerQuestCounters || {
+        plantSeeds: {},
+        sellFruits: {},
+        sellAmount: 0,
+        harvestSeeds: {},
+        createHybrids: 0,
+        doSynthesis: 0,
+        useBoosters: {},
+      };
+
       return {
         ...prev,
         inventory: newInventory,
         craftDraft: null,
-        hybridsCreated: prev.hybridsCreated + 1
+        hybridsCreated: prev.hybridsCreated + 1,
+        dealerQuestCounters: {
+          ...counters,
+          createHybrids: (counters.createHybrids || 0) + 1,
+        },
       };
     });
   }, []);
@@ -1027,10 +1217,27 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
   }, []);
 
   const completeSynthesis = useCallback((cellId: number) => {
-    setState(prev => ({
-      ...prev,
-      synthesisActive: (prev.synthesisActive || []).filter(s => s.cellId !== cellId)
-    }));
+    setState(prev => {
+      // Обновляем счетчик квестов (выполнить синтез)
+      const counters = prev.dealerQuestCounters || {
+        plantSeeds: {},
+        sellFruits: {},
+        sellAmount: 0,
+        harvestSeeds: {},
+        createHybrids: 0,
+        doSynthesis: 0,
+        useBoosters: {},
+      };
+
+      return {
+        ...prev,
+        synthesisActive: (prev.synthesisActive || []).filter(s => s.cellId !== cellId),
+        dealerQuestCounters: {
+          ...counters,
+          doSynthesis: (counters.doSynthesis || 0) + 1,
+        },
+      };
+    });
   }, []);
 
   const setReferralCount = useCallback((count: number) => {
@@ -1062,6 +1269,462 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
       console.error('Failed to reload state from server', error);
     }
   }, [tgId, applyServerState]);
+
+  // ============ СИСТЕМА КВЕСТОВ СКУПЩИКА ============
+  
+  // Пороги опыта для уровней скупщика (30/60/90/120/150/180)
+  const DEALER_LEVEL_THRESHOLDS = [0, 30, 60, 90, 120, 150, 180];
+  const MAX_DEALER_LEVEL = 7;
+
+  // Инициализация страницы квестов (если пустая)
+  const initializeDealerQuestPage = useCallback((page: number) => {
+    setState(prev => {
+      if (prev.dealerQuestPages?.[page] && prev.dealerQuestPages[page].length === 30) {
+        return prev; // Страница уже полностью инициализирована
+      }
+
+      // Собираем все уже использованные квесты пользователя (из всех страниц)
+      const allUsedQuestIds = new Set<string>();
+      
+      // Добавляем квесты со всех страниц
+      Object.values(prev.dealerQuestPages || {}).forEach(questIds => {
+        questIds.forEach(id => allUsedQuestIds.add(id));
+      });
+      
+      // Добавляем выполненные квесты
+      (prev.dealerCompletedQuests || []).forEach(id => allUsedQuestIds.add(id));
+
+      // Получаем все доступные квесты для этой страницы
+      const allPageQuests = ALL_DEALER_QUESTS.filter(q => q.page === page);
+      
+      // Фильтруем только те, которые еще не использованы
+      const availableQuests = allPageQuests.filter(q => !allUsedQuestIds.has(q.id));
+      
+      // Если доступных квестов недостаточно, используем все квесты страницы (но это не должно произойти при 2000+ квестах)
+      const questsToUse = availableQuests.length >= 30 ? availableQuests : allPageQuests;
+
+      // Перемешиваем и берем 30 уникальных
+      const shuffled = [...questsToUse].sort(() => Math.random() - 0.5);
+      const uniqueQuests: string[] = [];
+      const usedInThisPage = new Set<string>();
+      
+      for (let i = 0; i < shuffled.length && uniqueQuests.length < 30; i++) {
+        const questId = shuffled[i].id;
+        if (!usedInThisPage.has(questId) && !allUsedQuestIds.has(questId)) {
+          uniqueQuests.push(questId);
+          usedInThisPage.add(questId);
+        }
+      }
+
+      // Если не хватило уникальных квестов, добавляем любые уникальные
+      if (uniqueQuests.length < 30) {
+        for (let i = 0; i < shuffled.length && uniqueQuests.length < 30; i++) {
+          const questId = shuffled[i].id;
+          if (!usedInThisPage.has(questId)) {
+            uniqueQuests.push(questId);
+            usedInThisPage.add(questId);
+          }
+        }
+      }
+
+      const newPages = { ...(prev.dealerQuestPages || {}) };
+      newPages[page] = uniqueQuests;
+
+      // Если это первая страница и нет активного квеста - устанавливаем первый квест активным
+      let newActiveQuest = prev.dealerActiveQuest;
+      let newStartAmounts = { ...(prev.dealerQuestStartAmounts || {}) };
+      
+      if (page === 1 && !newActiveQuest && uniqueQuests.length > 0) {
+        newActiveQuest = uniqueQuests[0];
+        // Инициализируем начальную сумму для нового активного квеста типа "sell_amount"
+        if (newActiveQuest) {
+          const firstQuest = getQuestById(newActiveQuest);
+          if (firstQuest && firstQuest.type === 'sell_amount') {
+            const counters = prev.dealerQuestCounters || {
+              plantSeeds: {},
+              sellFruits: {},
+              sellAmount: 0,
+              harvestSeeds: {},
+              createHybrids: 0,
+              doSynthesis: 0,
+              useBoosters: {},
+            };
+            newStartAmounts[newActiveQuest] = counters.sellAmount || 0;
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        dealerQuestPages: newPages,
+        dealerActiveQuest: newActiveQuest,
+        dealerQuestStartAmounts: newStartAmounts,
+      };
+    });
+  }, []);
+
+  // Проверка и обновление прогресса квестов
+  const updateQuestProgress = useCallback(() => {
+    setState(prev => {
+      if (!prev.dealerActiveQuest) return prev;
+
+      const quest = getQuestById(prev.dealerActiveQuest);
+      if (!quest) return prev;
+
+      const counters = prev.dealerQuestCounters || {
+        plantSeeds: {},
+        sellFruits: {},
+        sellAmount: 0,
+        harvestSeeds: {},
+        createHybrids: 0,
+        doSynthesis: 0,
+        useBoosters: {},
+      };
+
+      let currentProgress = 0;
+
+      switch (quest.type) {
+        case 'plant_seed':
+          if (quest.itemId) {
+            currentProgress = counters.plantSeeds?.[quest.itemId] || 0;
+          }
+          break;
+        case 'sell_fruit':
+          if (quest.itemId) {
+            currentProgress = counters.sellFruits?.[quest.itemId] || 0;
+          }
+          break;
+        case 'sell_amount':
+          // Для квестов "продать на сумму" учитываем только деньги, полученные с момента начала квеста
+          const startAmount = prev.dealerQuestStartAmounts?.[quest.id];
+          if (startAmount !== undefined) {
+            currentProgress = Math.max(0, (counters.sellAmount || 0) - startAmount);
+          } else {
+            // Если квест только активирован, сохраняем текущую сумму
+            const newStartAmounts = { ...(prev.dealerQuestStartAmounts || {}), [quest.id]: counters.sellAmount || 0 };
+            return {
+              ...prev,
+              dealerQuestStartAmounts: newStartAmounts,
+            };
+          }
+          break;
+        case 'harvest_seed':
+          if (quest.itemId) {
+            currentProgress = counters.harvestSeeds?.[quest.itemId] || 0;
+          }
+          break;
+        case 'create_hybrid':
+          currentProgress = counters.createHybrids || 0;
+          break;
+        case 'do_synthesis':
+          currentProgress = counters.doSynthesis || 0;
+          break;
+        case 'use_booster':
+          if (quest.itemId) {
+            currentProgress = counters.useBoosters?.[quest.itemId] || 0;
+          }
+          break;
+      }
+
+      const newProgress = { ...(prev.dealerQuestProgress || {}) };
+      newProgress[quest.id] = currentProgress;
+
+      return {
+        ...prev,
+        dealerQuestProgress: newProgress,
+      };
+    });
+  }, []);
+
+  // Завершение квеста и выдача наград
+  const completeDealerQuest = useCallback((questId: string) => {
+    setState(prev => {
+      const quest = getQuestById(questId);
+      if (!quest) return prev;
+
+      // Проверяем выполнение
+      const counters = prev.dealerQuestCounters || {
+        plantSeeds: {},
+        sellFruits: {},
+        sellAmount: 0,
+        harvestSeeds: {},
+        createHybrids: 0,
+        doSynthesis: 0,
+        useBoosters: {},
+      };
+
+      let currentProgress = 0;
+      switch (quest.type) {
+        case 'plant_seed':
+          currentProgress = quest.itemId ? (counters.plantSeeds?.[quest.itemId] || 0) : 0;
+          break;
+        case 'sell_fruit':
+          currentProgress = quest.itemId ? (counters.sellFruits?.[quest.itemId] || 0) : 0;
+          break;
+        case 'sell_amount':
+          // Для квестов "продать на сумму" учитываем только деньги, полученные с момента начала квеста
+          const startAmount = prev.dealerQuestStartAmounts?.[questId];
+          if (startAmount !== undefined) {
+            currentProgress = Math.max(0, (counters.sellAmount || 0) - startAmount);
+          } else {
+            // Если квест только начали выполнять, сохраняем текущую сумму
+            const newStartAmounts = { ...(prev.dealerQuestStartAmounts || {}), [questId]: counters.sellAmount || 0 };
+            return {
+              ...prev,
+              dealerQuestStartAmounts: newStartAmounts,
+            };
+          }
+          break;
+        case 'harvest_seed':
+          currentProgress = quest.itemId ? (counters.harvestSeeds?.[quest.itemId] || 0) : 0;
+          break;
+        case 'create_hybrid':
+          currentProgress = counters.createHybrids || 0;
+          break;
+        case 'do_synthesis':
+          currentProgress = counters.doSynthesis || 0;
+          break;
+        case 'use_booster':
+          currentProgress = quest.itemId ? (counters.useBoosters?.[quest.itemId] || 0) : 0;
+          break;
+      }
+
+      if (currentProgress < quest.target) {
+        return prev; // Квест еще не выполнен
+      }
+
+      // Выдача наград
+      let newBalance = prev.balance + quest.rewardEco;
+      let newInventory = [...prev.inventory];
+
+      // Награда бустерами
+      if (quest.rewardBoosters) {
+        quest.rewardBoosters.forEach(({ boosterId, count }) => {
+          newInventory = addCount(newInventory, boosterId, count, boosterFallback(boosterId));
+        });
+      }
+
+      // Награда семенами
+      if (quest.rewardSeeds) {
+        quest.rewardSeeds.forEach(({ seedId, count }) => {
+          const seedDef = SEEDS[seedId];
+          if (seedDef) {
+            newInventory = addCount(newInventory, seedId, count, {
+              id: seedId,
+              type: 'seed',
+              name: seedDef.name,
+              emoji: seedDef.emoji,
+              count: 0,
+            });
+          }
+        });
+      }
+
+      // Добавляем квест в выполненные
+      const newCompleted = [...(prev.dealerCompletedQuests || []), questId];
+
+      // Добавляем опыт скупщика
+      const xpGained = quest.page; // Опыт = номер страницы
+      let newDealerXP = (prev.dealerXP || 0) + xpGained;
+      let newDealerLevel = prev.dealerLevel || 1;
+
+      // Проверяем повышение уровня
+      if (newDealerLevel < MAX_DEALER_LEVEL) {
+        const requiredXP = DEALER_LEVEL_THRESHOLDS[newDealerLevel];
+        if (newDealerXP >= requiredXP) {
+          newDealerLevel = Math.min(newDealerLevel + 1, MAX_DEALER_LEVEL);
+        }
+      }
+
+      // Находим следующий квест
+      const questPage = quest.page;
+      const pageQuests = prev.dealerQuestPages?.[questPage] || [];
+      const currentIndex = pageQuests.indexOf(questId);
+      let nextActiveQuest: string | null = null;
+
+      // Обновляем начальные суммы для новых активных квестов типа "sell_amount"
+      let newStartAmounts = { ...(prev.dealerQuestStartAmounts || {}) };
+      
+      if (currentIndex !== -1 && currentIndex < pageQuests.length - 1) {
+        // Следующий квест на этой же странице
+        nextActiveQuest = pageQuests[currentIndex + 1];
+        // Инициализируем начальную сумму для нового активного квеста типа "sell_amount"
+        if (nextActiveQuest) {
+          const nextQuest = getQuestById(nextActiveQuest);
+          if (nextQuest && nextQuest.type === 'sell_amount' && newStartAmounts[nextActiveQuest] === undefined) {
+            newStartAmounts[nextActiveQuest] = counters.sellAmount || 0;
+          }
+        }
+      } else {
+        // Проверяем, все ли квесты страницы выполнены
+        const allPageQuestsCompleted = pageQuests.every(qId => 
+          newCompleted.includes(qId)
+        );
+
+        if (allPageQuestsCompleted && questPage < 6) {
+          // Инициализируем следующую страницу
+          const nextPage = questPage + 1;
+          const nextPageQuests = prev.dealerQuestPages?.[nextPage] || [];
+          if (nextPageQuests.length === 0 || nextPageQuests.length < 30) {
+            // Генерируем квесты для следующей страницы с проверкой уникальности
+            const allUsedQuestIds = new Set<string>();
+            Object.values(prev.dealerQuestPages || {}).forEach(questIds => {
+              questIds.forEach(id => allUsedQuestIds.add(id));
+            });
+            newCompleted.forEach(id => allUsedQuestIds.add(id));
+            
+            const allPageQuests = ALL_DEALER_QUESTS.filter(q => q.page === nextPage);
+            const availableQuests = allPageQuests.filter(q => !allUsedQuestIds.has(q.id));
+            const shuffled = [...availableQuests].sort(() => Math.random() - 0.5);
+            const newPageQuests: string[] = [];
+            const usedInThisPage = new Set<string>();
+            
+            for (let i = 0; i < shuffled.length && newPageQuests.length < 30; i++) {
+              const questId = shuffled[i].id;
+              if (!usedInThisPage.has(questId) && !allUsedQuestIds.has(questId)) {
+                newPageQuests.push(questId);
+                usedInThisPage.add(questId);
+              }
+            }
+            
+            const newPages = { ...(prev.dealerQuestPages || {}), [nextPage]: newPageQuests };
+            nextActiveQuest = newPageQuests[0] || null;
+            // Инициализируем начальную сумму для нового активного квеста типа "sell_amount"
+            if (nextActiveQuest) {
+              const nextQuest = getQuestById(nextActiveQuest);
+              if (nextQuest && nextQuest.type === 'sell_amount' && newStartAmounts[nextActiveQuest] === undefined) {
+                newStartAmounts[nextActiveQuest] = counters.sellAmount || 0;
+              }
+            }
+            return {
+              ...prev,
+              balance: roundCurrency(newBalance),
+              inventory: newInventory,
+              dealerCompletedQuests: newCompleted,
+              dealerXP: newDealerXP,
+              dealerLevel: newDealerLevel,
+              dealerActiveQuest: nextActiveQuest,
+              dealerQuestPages: newPages,
+              dealerQuestStartAmounts: newStartAmounts,
+            };
+          } else {
+            nextActiveQuest = nextPageQuests[0];
+            // Инициализируем начальную сумму для нового активного квеста типа "sell_amount"
+            if (nextActiveQuest) {
+              const nextQuest = getQuestById(nextActiveQuest);
+              if (nextQuest && nextQuest.type === 'sell_amount' && newStartAmounts[nextActiveQuest] === undefined) {
+                newStartAmounts[nextActiveQuest] = counters.sellAmount || 0;
+              }
+            }
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        balance: roundCurrency(newBalance),
+        inventory: newInventory,
+        dealerCompletedQuests: newCompleted,
+        dealerXP: newDealerXP,
+        dealerLevel: newDealerLevel,
+        dealerActiveQuest: nextActiveQuest,
+        dealerQuestStartAmounts: newStartAmounts,
+      };
+    });
+  }, []);
+
+  // Получение множителя цены скупщика
+  const getDealerPriceMultiplier = useCallback(() => {
+    const level = state.dealerLevel || 1;
+    // Накопительный множитель: +5% за уровень
+    return 1 + (level - 1) * 0.05;
+  }, [state.dealerLevel]);
+
+  // Инициализация первой страницы при первой загрузке
+  useEffect(() => {
+    if (!state.dealerQuestPages?.[1] || state.dealerQuestPages[1].length === 0) {
+      initializeDealerQuestPage(1);
+    }
+  }, [state.dealerQuestPages, initializeDealerQuestPage]);
+
+  // Проверка выполнения квестов каждые 0.5 секунды
+  useEffect(() => {
+    if (isLoading) return;
+
+    const checkQuests = () => {
+      updateQuestProgress();
+      
+      // Проверяем активный квест на выполнение
+      const activeQuestId = stateRef.current.dealerActiveQuest;
+      if (activeQuestId) {
+        const quest = getQuestById(activeQuestId);
+        if (quest) {
+          const counters = stateRef.current.dealerQuestCounters || {
+            plantSeeds: {},
+            sellFruits: {},
+            sellAmount: 0,
+            harvestSeeds: {},
+            createHybrids: 0,
+            doSynthesis: 0,
+            useBoosters: {},
+          };
+
+          let currentProgress = 0;
+          switch (quest.type) {
+            case 'plant_seed':
+              currentProgress = quest.itemId ? (counters.plantSeeds?.[quest.itemId] || 0) : 0;
+              break;
+            case 'sell_fruit':
+              currentProgress = quest.itemId ? (counters.sellFruits?.[quest.itemId] || 0) : 0;
+              break;
+            case 'sell_amount':
+              // Для квестов "продать на сумму" учитываем только деньги, полученные с момента начала квеста
+              const startAmount = stateRef.current.dealerQuestStartAmounts?.[quest.id];
+              if (startAmount !== undefined) {
+                currentProgress = Math.max(0, (counters.sellAmount || 0) - startAmount);
+              }
+              break;
+            case 'harvest_seed':
+              currentProgress = quest.itemId ? (counters.harvestSeeds?.[quest.itemId] || 0) : 0;
+              break;
+            case 'create_hybrid':
+              currentProgress = counters.createHybrids || 0;
+              break;
+            case 'do_synthesis':
+              currentProgress = counters.doSynthesis || 0;
+              break;
+            case 'use_booster':
+              currentProgress = quest.itemId ? (counters.useBoosters?.[quest.itemId] || 0) : 0;
+              break;
+          }
+
+          if (currentProgress >= quest.target) {
+            // Проверяем, показывали ли уже уведомление для этого квеста
+            const notificationShown = stateRef.current.dealerQuestNotificationsShown?.includes(quest.id);
+            if (!notificationShown) {
+              // Квест выполнен - показываем уведомление ТОЛЬКО ОДИН РАЗ
+              setDealerQuestNotification({
+                questId: quest.id,
+                questName: quest.description,
+                questEmoji: '🎯',
+                message: `Квест "${quest.description}" выполнен! Заберите награду во вкладке "Квесты".`,
+              });
+              
+              // Помечаем, что уведомление показано
+              setState(prev => ({
+                ...prev,
+                dealerQuestNotificationsShown: [...(prev.dealerQuestNotificationsShown || []), quest.id],
+              }));
+            }
+            // Не завершаем автоматически - игрок должен сам нажать "Завершить" в модалке
+          }
+        }
+      }
+    };
+
+    const interval = window.setInterval(checkQuests, 500);
+    return () => window.clearInterval(interval);
+  }, [isLoading, updateQuestProgress]);
 
   return {
     state,
@@ -1098,6 +1761,8 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
     applyBooster,
     boosterNotification,
     clearBoosterNotification,
+    dealerQuestNotification,
+    clearDealerQuestNotification: () => setDealerQuestNotification(null),
     canClaimDaily,
     claimDaily,
     buyEcoWithTon,
@@ -1108,7 +1773,10 @@ export function useGameLogic(tgId?: number, initData?: string | null, startParam
     setReferralCount,
     reloadFromServer,
     telegramId: tgId,
-     
+    // Функции квестов скупщика
+    initializeDealerQuestPage,
+    completeDealerQuest,
+    getDealerPriceMultiplier,
    } as const;
 }
 

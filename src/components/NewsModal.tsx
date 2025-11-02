@@ -148,9 +148,50 @@ export default function NewsModal({ open, onClose }: { open: boolean; onClose: (
       case 'exchange':
         return (
           <div className="p-4 rounded-2xl bg-orange-50 border border-orange-200">
-            <div className="font-semibold text-orange-800 mb-2">📈 Биржа</div>
-            <div className="text-sm text-orange-900">
-              Торгуйте семенами и плодами с другими игроками. Устанавливайте свои цены, ищите выгодные предложения. Приоритет для подписчиков Plus/Premium.
+            <div className="font-semibold text-orange-800 mb-2">🎯 Квесты скупщика</div>
+            <div className="text-sm text-orange-900 space-y-3">
+              <div>
+                <p className="mb-2"><strong>Что это?</strong></p>
+                <p>Система квестов, которые помогают прокачивать уровень скупщика. Чем выше уровень, тем больше денег за продажу плодов!</p>
+              </div>
+              
+              <div>
+                <p className="mb-2"><strong>📊 Структура:</strong></p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>6 страниц по 30 квестов (всего 180)</li>
+                  <li>Квесты открываются по порядку</li>
+                  <li>Опыт: страница 1 = 1 XP, страница 2 = 2 XP, и так далее</li>
+                  <li>Для открытия следующей страницы нужно выполнить все 30 квестов предыдущей</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="mb-2"><strong>💰 Уровни скупщика:</strong></p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Максимум: 7 уровней</li>
+                  <li>Пороги: 30, 60, 90, 120, 150, 180 опыта</li>
+                  <li>Каждый уровень: +5% к цене (накопительно)</li>
+                  <li>Уровень 7 = +30% к цене продажи!</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="mb-2"><strong>🎁 Типы квестов:</strong></p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>🌱 Посадить семена определённого типа</li>
+                  <li>🍎 Продать определённое количество плодов</li>
+                  <li>💰 Продать на сумму $ECO (учитываются только продажи после начала квеста)</li>
+                  <li>🌾 Вырастить (собрать) растения</li>
+                  <li>🔬 Создать гибриды</li>
+                  <li>🧬 Выполнить синтез</li>
+                  <li>⚡ Использовать бустеры</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="mb-2"><strong>🎁 Награды:</strong></p>
+                <p>За выполнение квестов вы получаете: $ECO, бустеры, семена и опыт скупщика для повышения уровня!</p>
+              </div>
             </div>
           </div>
         );
