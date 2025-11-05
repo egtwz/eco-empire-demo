@@ -1,12 +1,6 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
-interface Props {
-  open: boolean;
-  type: 'plus' | 'premium';
-  onClose: () => void;
-}
-
-export default function SubscriptionModal({ open, type, onClose }: Props) {
+export default function SubscriptionModal({ open, onClose, type }: { open: boolean; onClose: () => void; type: 'plus' | 'premium' }) {
   const isPremium = type === 'premium';
   const color = isPremium ? 'from-purple-500 to-pink-500' : 'from-yellow-400 to-yellow-600';
   const emoji = isPremium ? '💎' : '🥇';

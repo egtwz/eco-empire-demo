@@ -135,6 +135,81 @@ class GameAPI {
     }
   }
 
+  async getTopPlayers(type: 'eco' | 'other', limit: number = 100): Promise<ReferralSummary[]> {
+    try {
+      const url = `${API_BASE_URL}/api/top?type=${type}&limit=${limit}`;
+      console.log('[gameAPI] getTopPlayers: fetching from', url);
+      const headers = this.buildHeaders();
+      console.log('[gameAPI] getTopPlayers: headers', Object.keys(headers));
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
+      
+      console.log('[gameAPI] getTopPlayers: response status', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || `HTTP ${response.status}` };
+        }
+        console.error('[gameAPI] Top players API error:', response.status, errorData);
+        throw new Error(errorData.error || errorData.details || `Failed to load top players: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('[gameAPI] getTopPlayers: response data', data);
+      
+      if (!data || !Array.isArray(data.players)) {
+        console.error('[gameAPI] Invalid top players response:', data);
+        return [];
+      }
+      
+      return data.players;
+    } catch (error: any) {
+      console.error('[gameAPI] Failed to fetch top players', error);
+      throw error;
+    }
+  }
+
+  async getDailyWeeklyQuest(type: 'daily' | 'weekly'): Promise<{ questId: string; updatedAt: number; expiresAt: number } | null> {
+    try {
+      const url = `${API_BASE_URL}/api/quests/${type}`;
+      const headers = this.buildHeaders();
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          // Квест еще не назначен - это нормально
+          return null;
+        }
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || `HTTP ${response.status}` };
+        }
+        console.error(`[gameAPI] Quest ${type} API error:`, response.status, errorData);
+        return null;
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.error(`[gameAPI] Failed to fetch ${type} quest`, error);
+      return null;
+    }
+  }
+
 
   async getUserData(): Promise<GameState | null> {
     if (!this.tgId) return null;

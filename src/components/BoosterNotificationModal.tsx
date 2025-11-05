@@ -7,6 +7,8 @@ interface BoosterNotificationModalProps {
 }
 
 export default function BoosterNotificationModal({ notification, onClose }: BoosterNotificationModalProps) {
+  if (!notification) return null;
+
   return (
     <AnimatePresence>
       {notification && (

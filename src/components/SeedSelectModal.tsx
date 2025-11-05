@@ -28,21 +28,23 @@ export default function SeedSelectModal({ open, seeds, onClose, onSelect }: Prop
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-base font-semibold mb-2">Выберите семена</div>
-            <div className="grid grid-cols-2 gap-2">
-              {seeds.length === 0 && (
-                <div className="col-span-2 text-sm text-gray-500">Нет семян в инвентаре</div>
-              )}
-              {seeds.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => onSelect(s.id)}
-                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[var(--card)] shadow-md hover:bg-gray-50 focus:outline-none"
-                >
-                  <span className="text-lg">{s.emoji}</span>
-                  <span className="text-sm flex-1 text-left">{s.name}</span>
-                  <span className="text-xs px-2 py-0.5 bg-gray-100 rounded-full">×{s.count}</span>
-                </button>
-              ))}
+            <div className="max-h-[60vh] overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 gap-2">
+                {seeds.length === 0 && (
+                  <div className="col-span-2 text-sm text-gray-500">Нет семян в инвентаре</div>
+                )}
+                {seeds.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => onSelect(s.id)}
+                    className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[var(--card)] shadow-md hover:bg-gray-50 focus:outline-none"
+                  >
+                    <span className="text-lg">{s.emoji}</span>
+                    <span className="text-sm flex-1 text-left">{s.name}</span>
+                    <span className="text-xs px-2 py-0.5 bg-gray-100 rounded-full">×{s.count}</span>
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="mt-3">
               <button onClick={onClose} className="w-full py-2 rounded-xl bg-[var(--primary)] text-white hover:bg-[var(--secondary)]">

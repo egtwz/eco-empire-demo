@@ -22,6 +22,12 @@ interface TelegramWebApp {
   sendData: (data: string) => void;
   openTelegramLink: (url: string) => void;
   openLink: (url: string) => void;
+  disableVerticalSwipes?: () => void;
+  enableVerticalSwipes?: () => void;
+  requestFullscreen?: () => void;
+  exitFullscreen?: () => void;
+  platform?: string;
+  version?: string;
 }
 
 declare global {
@@ -83,11 +89,113 @@ export function useTelegram() {
   const [startParam, setStartParam] = useState<string | null>(null);
 
   useEffect(() => {
+    let touchStartY: number | undefined;
+    let touchStartScrollY: number | undefined;
+    let scrollableEl: HTMLElement | null = null;
+    
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0].clientY;
+      if (scrollableEl) {
+        touchStartScrollY = scrollableEl.scrollTop;
+      } else {
+        touchStartScrollY = window.scrollY;
+      }
+    };
+    
+    const onTouchMove = (e: TouchEvent) => {
+      if (touchStartY === undefined || touchStartScrollY === undefined) return;
+      
+      const currentY = e.changedTouches[0].clientY;
+      const deltaY = currentY - touchStartY;
+      
+      // Блокируем только свайп вниз для предотвращения закрытия приложения
+      // Блокируем ТОЛЬКО если:
+      // 1. Пользователь начал касание в верхней части экрана (первые 100px)
+      // 2. Контент уже в самом верху (scrollTop === 0)
+      // 3. Пользователь пытается свайпнуть вниз (deltaY > 0)
+      if (deltaY > 0) {
+        const isNearTop = touchStartY < 100; // Начало касания в верхних 100px экрана
+        
+        if (scrollableEl) {
+          const currentScroll = scrollableEl.scrollTop;
+          // Блокируем только если начали касание вверху И контент уже в самом верху
+          if (isNearTop && currentScroll <= 0 && touchStartScrollY <= 0 && deltaY > 10) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+        } else {
+          // Если нет scrollable элемента
+          if (isNearTop && touchStartScrollY <= 0 && deltaY > 10) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+        }
+      }
+      // Разрешаем свайп вверх (deltaY < 0) - не блокируем
+    };
+    
     const initTelegram = () => {
       try {
         if (window.Telegram?.WebApp) {
-          window.Telegram.WebApp.ready();
-          window.Telegram.WebApp.expand();
+          const tgWebApp = window.Telegram.WebApp;
+          
+          // Инициализируем WebApp
+          tgWebApp.ready();
+          
+          // Отключаем вертикальные свайпы СРАЗУ после ready()
+          // Bot API 7.7+ (июль 2024) - согласно документации: https://core.telegram.org/bots/webapps
+          if (typeof tgWebApp.disableVerticalSwipes === 'function') {
+            tgWebApp.disableVerticalSwipes();
+          }
+          
+          // Разворачиваем приложение на весь доступный экран
+          tgWebApp.expand();
+          
+          // Находим scrollable элемент (root элемент)
+          scrollableEl = document.getElementById('root');
+
+          const registerTouchHandlers = () => {
+            const target = scrollableEl || document.documentElement;
+
+            target.removeEventListener('touchstart', onTouchStart);
+            target.removeEventListener('touchmove', onTouchMove);
+            target.addEventListener('touchstart', onTouchStart, { passive: false });
+            target.addEventListener('touchmove', onTouchMove, { passive: false });
+
+            window.removeEventListener('touchstart', onTouchStart);
+            window.removeEventListener('touchmove', onTouchMove);
+            window.addEventListener('touchstart', onTouchStart, { passive: false });
+            window.addEventListener('touchmove', onTouchMove, { passive: false });
+          };
+
+          registerTouchHandlers();
+          setTimeout(registerTouchHandlers, 100);
+          setTimeout(registerTouchHandlers, 300);
+           
+          // Запрашиваем полноэкранный режим и еще раз вызываем expand несколько раз
+          const requestFullscreenAndExpand = () => {
+            // Запрашиваем полноэкранный режим (Bot API 8.0+, ноябрь 2024)
+            if (typeof tgWebApp.requestFullscreen === 'function' && tgWebApp.requestFullscreen) {
+              try {
+                tgWebApp.requestFullscreen();
+              } catch (e) {
+                console.warn('Failed to request fullscreen:', e);
+              }
+            }
+            
+            // Вызываем expand несколько раз для гарантии развертывания
+            try {
+              tgWebApp.expand();
+            } catch (e) {
+              console.warn('Failed to expand:', e);
+            }
+          };
+          
+          setTimeout(requestFullscreenAndExpand, 150);
+          setTimeout(requestFullscreenAndExpand, 400);
+          setTimeout(requestFullscreenAndExpand, 800);
           
           const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
           let rawInitData = window.Telegram.WebApp.initData || null;
@@ -119,6 +227,15 @@ export function useTelegram() {
       // Fallback для разработки
       setIsReady(true);
     }
+    
+    // Cleanup функция для удаления обработчиков событий
+    return () => {
+      const target = document.getElementById('root') || document.documentElement;
+      target.removeEventListener('touchstart', onTouchStart);
+      target.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
+    };
   }, []);
 
   // В некоторых клиентах initData передаётся только через URL — обрабатываем его отдельно

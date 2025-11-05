@@ -12,7 +12,7 @@ export default function RewardsModal({ open, onClose, game }: { open: boolean; o
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-3"
+          className="fixed inset-0 z-30 flex items-center justify-center bg-gradient-to-br from-sky-400 via-blue-400 to-sky-500 p-3"
           onClick={onClose}
         >
           <motion.div
@@ -20,7 +20,7 @@ export default function RewardsModal({ open, onClose, game }: { open: boolean; o
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 40, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-            className="w-full max-w-md bg-white rounded-2xl p-5 shadow-lg"
+            className="w-full max-w-md bg-white rounded-2xl p-5 shadow-2xl"
           onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
@@ -34,13 +34,9 @@ export default function RewardsModal({ open, onClose, game }: { open: boolean; o
                 <div className="text-xs text-yellow-900">15-дневная серия посещений с призами</div>
               </button>
 
-              <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200">
-                <div className="font-semibold text-blue-800 mb-1">Подписки на каналы</div>
-                <div className="text-xs text-blue-900 mb-2">Подпишитесь на каналы и получите награды</div>
-                <ul className="text-xs text-blue-900 list-disc pl-5 space-y-1">
-                  <li>Канал EcoEmpire Новости — +100 $ECO</li>
-                  <li>Канал Партнёров — +1 ускоритель ⚡</li>
-                </ul>
+              <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 opacity-60 cursor-not-allowed">
+                <div className="font-semibold text-gray-600 mb-1">Скоро здесь появятся награды...</div>
+                <div className="text-xs text-gray-500">Новые награды будут доступны в ближайшее время</div>
               </div>
             </div>
           </motion.div>
@@ -81,7 +77,7 @@ function DailyRewardsModal({ open, onClose, game, onClaimed }: { open: boolean; 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/30"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-gradient-to-br from-sky-400 via-blue-400 to-sky-500"
           onClick={(e) => { e.stopPropagation(); onClose(); }}
         >
           <motion.div
@@ -89,7 +85,7 @@ function DailyRewardsModal({ open, onClose, game, onClaimed }: { open: boolean; 
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 40, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-            className="w-full max-w-md bg-white rounded-2xl p-5 shadow-lg max-h-[90vh] flex flex-col"
+            className="w-full max-w-md bg-white rounded-2xl p-5 shadow-2xl max-h-[66vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
@@ -99,7 +95,7 @@ function DailyRewardsModal({ open, onClose, game, onClaimed }: { open: boolean; 
 
             <div className="text-xs text-gray-600 mb-3">День {displayDay} из {cycleLength}. Собирайте награды подряд, чтобы завершить 15-дневный цикл.</div>
 
-            <div className="grid grid-cols-3 gap-2 overflow-y-auto pr-1 mb-3">
+            <div className="grid grid-cols-3 gap-2 pr-1 mb-3 flex-1 overflow-y-auto min-h-0">
               {plan.map((r, idx) => (
                 <div key={idx} className={`p-3 rounded-xl border text-center ${idx === highlightIndex ? 'bg-yellow-50 border-yellow-300' : 'bg-gray-50 border-gray-200'}`}>
                   <div className="text-xs text-gray-500 mb-1">День {idx + 1}</div>

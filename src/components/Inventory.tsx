@@ -100,7 +100,7 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
   };
 
   return (
-    <div className="max-w-md mx-auto p-3 pb-24">
+    <div className="max-w-md mx-auto p-3 pb-24" style={{ paddingTop: '28px' }}>
       {/* Вкладки */}
       <div className="flex gap-2 mb-4">
         <button
@@ -348,7 +348,7 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-sky-400 via-blue-400 to-sky-500 p-3"
             onClick={() => setShowSynthesisPlantsModal(false)}
           >
             <motion.div

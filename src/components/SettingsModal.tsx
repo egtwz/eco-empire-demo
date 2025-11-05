@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '../hooks/useGameLogic';
+import { TonConnectButton } from '@tonconnect/ui-react';
+import { useTonConnect } from '../hooks/useTonConnect';
 
 interface Props {
   open: boolean;
@@ -10,6 +12,7 @@ interface Props {
 export default function SettingsModal({ open, onClose, game }: Props & { game: ReturnType<typeof useGameLogic> }) {
   const { state, updateUsername } = game;
   const [newUsername, setNewUsername] = useState(state.username);
+  const { walletAddress, isConnected, disconnectWallet } = useTonConnect();
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -124,9 +127,26 @@ export default function SettingsModal({ open, onClose, game }: Props & { game: R
             {/* TON кошелек */}
             <div className="mb-6">
               <div className="text-base font-semibold mb-3 text-gray-700">💰 TON кошелек</div>
-              <button className="w-full py-3 rounded-xl bg-blue-500 text-white hover:bg-blue-600 font-medium">
-                Подключить кошелек
-              </button>
+              {isConnected && walletAddress ? (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-green-50 border border-green-200">
+                    <div className="font-semibold text-green-800 mb-1 text-sm">✅ Кошелек подключен</div>
+                    <div className="text-xs text-green-700 font-mono break-all">
+                      {walletAddress}
+                    </div>
+                  </div>
+                  <button
+                    onClick={disconnectWallet}
+                    className="w-full py-2 rounded-xl bg-red-500 text-white hover:bg-red-600 font-medium text-sm"
+                  >
+                    Отключить кошелек
+                  </button>
+                </div>
+              ) : (
+                <div className="flex justify-center">
+                  <TonConnectButton />
+                </div>
+              )}
             </div>
 
             {/* Статистика */}

@@ -97,6 +97,41 @@ export default function ItemActionModal({ open, item, onClose, game }: Props & {
                 boosterInfo && (
                   <div className="text-xs text-purple-600 mt-1">{boosterInfo.shortDescription}</div>
                 )
+              ) : item.type === 'seed' ? (
+                <>
+                  {(() => {
+                    const seedInfo = getSeedInfo(item.id);
+                    const growSeconds = seedInfo?.growSeconds || 0;
+                    if (growSeconds > 0) {
+                      const hours = Math.floor(growSeconds / 3600);
+                      const minutes = Math.floor((growSeconds % 3600) / 60);
+                      const seconds = growSeconds % 60;
+                      let timeString = '';
+                      if (hours > 0) timeString += `${hours}ч `;
+                      if (minutes > 0) timeString += `${minutes}мин `;
+                      if (seconds > 0 && hours === 0) timeString += `${seconds}сек`;
+                      return (
+                        <div className="text-xs text-blue-600 mt-1">
+                          ⏱️ Время роста: {timeString.trim()}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                  {sellPrice === -1 ? (
+                    <div className="text-xs text-red-600 mt-1 font-semibold">
+                      ❌ Этот предмет нельзя продать
+                    </div>
+                  ) : (
+                    <div className="text-xs text-green-600 mt-1">
+                      Цена продажи: {sellPrice} $ECO/шт
+                    </div>
+                  )}
+                </>
+              ) : sellPrice === -1 ? (
+                <div className="text-xs text-red-600 mt-1 font-semibold">
+                  ❌ Этот предмет нельзя продать
+                </div>
               ) : (
                 <div className="text-xs text-green-600 mt-1">
                   Цена продажи: {sellPrice} $ECO/шт
@@ -135,6 +170,12 @@ export default function ItemActionModal({ open, item, onClose, game }: Props & {
                       </div>
                     )}
                   </>
+                ) : sellPrice === -1 ? (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-center">
+                    <div className="text-sm font-semibold text-red-800">
+                      Этот предмет нельзя продать скупщику
+                    </div>
+                  </div>
                 ) : (
                   <>
                     <button

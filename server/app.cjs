@@ -265,6 +265,188 @@ app.get('/api/referrals/:user_id', ensureTelegramAuth, parseUserId, async (req, 
   }
 });
 
+app.get('/api/top', ensureTelegramAuth, async (req, res) => {
+  console.log('[TOP] Request received:', req.method, req.path, req.query);
+  const { type = 'eco', limit = 100 } = req.query;
+  const limitNum = Math.min(100, Math.max(1, Number(limit) || 100));
+  
+  try {
+    if (type === 'eco') {
+      console.log('[TOP] Fetching top players by ECO, limit:', limitNum);
+      // Сортировка по балансу $ECO (balance)
+      // Ограничиваем количество строк в SQL для эффективности
+      const { rows } = await pool.query(
+        `SELECT user_id, save_data
+         FROM user_saves
+         WHERE save_data IS NOT NULL
+           AND save_data ? 'balance'
+         LIMIT 500`,
+        []
+      );
+      console.log('[TOP] Fetched', rows.length, 'rows from DB');
+      
+      // Фильтруем и сортируем в коде для надежности
+      const players = rows
+        .map((row) => {
+          try {
+            const data = row.save_data || {};
+            const balanceValue = data.balance;
+            
+            // Пробуем разные способы преобразования баланса
+            let balance = 0;
+            if (typeof balanceValue === 'number') {
+              balance = balanceValue;
+            } else if (typeof balanceValue === 'string') {
+              balance = parseFloat(balanceValue) || 0;
+            } else {
+              balance = Number(balanceValue) || 0;
+            }
+            
+            if (!Number.isFinite(balance) || balance <= 0) {
+              return null;
+            }
+            
+            return {
+              telegramId: Number(row.user_id),
+              username: data.username,
+              playerId: data.playerId,
+              title: data.title,
+              level: data.level || 1,
+              balance: balance,
+              totalEarned: Number(data.totalEarned || 0),
+              seedsPlanted: data.seedsPlanted,
+              fruitsHarvested: data.fruitsHarvested,
+              hybridsCreated: data.hybridsCreated,
+              dailyStreak: data.dailyStreak,
+              dailyCycleDay: data.dailyCycleDay,
+            };
+          } catch (err) {
+            console.warn('Error processing player row:', err);
+            return null;
+          }
+        })
+        .filter(p => p !== null && p.balance > 0)
+        .sort((a, b) => b.balance - a.balance)
+        .slice(0, limitNum);
+      
+      console.log('[TOP] Returning', players.length, 'players');
+      return res.json({ players });
+    } else {
+      // Для других типов пока возвращаем пустой массив
+      return res.json({ players: [] });
+    }
+  } catch (error) {
+    console.error('top players list error', error);
+    console.error('Error details:', error.message, error.stack);
+    return res.status(500).json({ error: 'DB error', details: error.message });
+  }
+});
+
+// Получение текущего ежедневного/еженедельного квеста
+app.get('/api/quests/:type', ensureTelegramAuth, async (req, res) => {
+  const { type } = req.params;
+  if (!['daily', 'weekly'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid quest type' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT quest_id, updated_at, expires_at FROM daily_weekly_quests WHERE quest_type = $1',
+      [type]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ error: 'Quest not found' });
+    }
+
+    return res.json({
+      questId: rows[0].quest_id,
+      updatedAt: Number(rows[0].updated_at),
+      expiresAt: Number(rows[0].expires_at),
+    });
+  } catch (error) {
+    console.error(`[api/quests/${type}] error`, error);
+    return res.status(500).json({ error: 'DB error', details: error.message });
+  }
+});
+
+// Обновление ежедневного/еженедельного квеста (для cron или ручного вызова)
+app.post('/api/quests/:type/update', async (req, res) => {
+  const { type } = req.params;
+  if (!['daily', 'weekly'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid quest type' });
+  }
+
+  // Список возможных квестов (нужно будет импортировать или определить здесь)
+  // Для упрощения, используем случайный выбор из предопределенных ID
+  const dailyQuestIds = [
+    'daily_001', 'daily_002', 'daily_003', 'daily_004', 'daily_005', 'daily_006', 'daily_007', 'daily_008',
+    'daily_009', 'daily_010', 'daily_011', 'daily_012', 'daily_013', 'daily_014', 'daily_015', 'daily_016',
+    'daily_017', 'daily_018', 'daily_019', 'daily_020', 'daily_021', 'daily_022', 'daily_023', 'daily_024',
+    'daily_025', 'daily_026', 'daily_027', 'daily_028', 'daily_029', 'daily_030', 'daily_031', 'daily_032',
+    'daily_033', 'daily_034', 'daily_035', 'daily_036', 'daily_037', 'daily_038', 'daily_039', 'daily_040',
+    'daily_041', 'daily_042', 'daily_043', 'daily_044', 'daily_045', 'daily_046', 'daily_047', 'daily_048',
+    'daily_049', 'daily_050', 'daily_051', 'daily_052'
+  ];
+
+  const weeklyQuestIds = [
+    'weekly_001', 'weekly_002', 'weekly_003', 'weekly_004', 'weekly_005', 'weekly_006', 'weekly_007',
+    'weekly_008', 'weekly_009', 'weekly_010', 'weekly_011', 'weekly_012', 'weekly_013', 'weekly_014',
+    'weekly_015', 'weekly_016', 'weekly_017', 'weekly_018', 'weekly_019', 'weekly_020', 'weekly_021',
+    'weekly_022', 'weekly_023', 'weekly_024', 'weekly_025', 'weekly_026', 'weekly_027', 'weekly_028',
+    'weekly_029', 'weekly_030', 'weekly_031', 'weekly_032', 'weekly_033', 'weekly_034', 'weekly_035',
+    'weekly_036', 'weekly_037', 'weekly_038'
+  ];
+
+  const questIds = type === 'daily' ? dailyQuestIds : weeklyQuestIds;
+  const randomQuestId = questIds[Math.floor(Math.random() * questIds.length)];
+
+  const now = Date.now();
+  let expiresAt = now;
+
+  if (type === 'daily') {
+    // Истекает через 24 часа (или в следующую полночь МСК)
+    const mskOffset = 3 * 60 * 60 * 1000; // МСК = UTC+3
+    const nowUtc = Date.now();
+    const nowMsk = new Date(nowUtc + mskOffset);
+    const nextMidnightMsk = new Date(nowMsk);
+    nextMidnightMsk.setHours(24, 0, 0, 0); // Следующая полночь МСК
+    expiresAt = nextMidnightMsk.getTime() - mskOffset; // Конвертируем обратно в UTC timestamp
+  } else {
+    // Истекает в следующий понедельник 00:00 МСК
+    const mskOffset = 3 * 60 * 60 * 1000;
+    const nowUtc = Date.now();
+    const nowMsk = new Date(nowUtc + mskOffset);
+    const daysUntilMonday = (8 - nowMsk.getDay()) % 7 || 7;
+    const nextMonday = new Date(nowMsk);
+    nextMonday.setDate(nowMsk.getDate() + daysUntilMonday);
+    nextMonday.setHours(0, 0, 0, 0);
+    expiresAt = nextMonday.getTime() - mskOffset;
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO daily_weekly_quests (quest_type, quest_id, updated_at, expires_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (quest_type) DO UPDATE
+       SET quest_id = excluded.quest_id,
+           updated_at = excluded.updated_at,
+           expires_at = excluded.expires_at`,
+      [type, randomQuestId, now, expiresAt]
+    );
+
+    return res.json({
+      ok: true,
+      questId: randomQuestId,
+      updatedAt: now,
+      expiresAt: expiresAt,
+    });
+  } catch (error) {
+    console.error(`[api/quests/${type}/update] error`, error);
+    return res.status(500).json({ error: 'DB error', details: error.message });
+  }
+});
+
 app.post('/api/referrals/reward', ensureTelegramAuth, async (req, res) => {
   const userId = String(req.telegramUser.id);
   const reason = req.body?.reason;

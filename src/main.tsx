@@ -1,5 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import { TonConnectUIProvider } from '@tonconnect/ui-react'
 import App from './App'
 
 // Allowed domains for quick local/tunnel runs
@@ -24,10 +25,26 @@ try {
   }
 } catch {}
 
+// Инициализация Telegram WebApp сразу при загрузке страницы
+if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
+  const tgWebApp = window.Telegram.WebApp;
+  
+  // Инициализируем сразу
+  tgWebApp.ready();
+  tgWebApp.expand();
+  
+  // Отключаем свайпы сразу
+  if (typeof tgWebApp.disableVerticalSwipes === 'function') {
+    tgWebApp.disableVerticalSwipes();
+  }
+}
+
 const root = createRoot(document.getElementById('root')!)
 root.render(
   <React.StrictMode>
-    <App />
+    <TonConnectUIProvider manifestUrl={window.location.origin + '/tonconnect-manifest.json'}>
+      <App />
+    </TonConnectUIProvider>
   </React.StrictMode>
 )
 

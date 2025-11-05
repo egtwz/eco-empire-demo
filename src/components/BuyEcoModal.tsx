@@ -1,7 +1,14 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '../hooks/useGameLogic';
 
-export default function BuyEcoModal({ open, onClose, game }: { open: boolean; onClose: () => void; game: ReturnType<typeof useGameLogic> }) {
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  game: ReturnType<typeof useGameLogic>;
+}
+
+export default function BuyEcoModal({ open, onClose, game }: Props) {
+
   const packages = [
     { eco: 100, ton: 10, label: 'Starter' },
     { eco: 500, ton: 40, label: 'Popular' },

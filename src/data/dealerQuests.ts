@@ -6,19 +6,21 @@ export type QuestType =
   | 'plant_seed'           // Посадить X семян определенного типа
   | 'sell_fruit'           // Продать X плодов определенного типа
   | 'sell_amount'          // Продать на сумму X $ECO
+  | 'spend_amount'        // Потратить X $ECO (любые траты)
   | 'harvest_seed'         // Вырастить (собрать) X семян определенного типа
   | 'create_hybrid'        // Создать X гибридов
   | 'do_synthesis'         // Сделать X синтезов
-  | 'use_booster';         // Использовать X бустеров определенного типа
+  | 'use_booster'          // Использовать X бустеров определенного типа
+  | 'process_item';        // Переработать X продуктов в определенном здании
 
 export interface DealerQuest {
   id: string;              // Уникальный ID квеста
   type: QuestType;         // Тип квеста
-  page: number;            // Страница (1-6)
+  page: number | 'daily' | 'weekly'; // Страница (1-6) или 'daily' или 'weekly'
   itemId?: string;         // ID конкретного предмета (seedId, fruitId, boosterId)
   rarity?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'; // Для квестов по редкости
   target: number;          // Требуемое количество
-  rewardEco: number;       // Награда в $ECO
+  rewardEco: number;       // Награда в $ECO (базовая, для daily/weekly будет умножена)
   rewardBoosters?: Array<{ boosterId: BoosterId; count: number }>; // Награда бустерами
   rewardSeeds?: Array<{ seedId: SeedId; count: number }>; // Награда семенами
   description: string;     // Описание квеста
@@ -263,6 +265,13 @@ export const DEALER_QUESTS: DealerQuest[] = [
   { id: 'dq_178', type: 'sell_fruit', page: 3, itemId: 'apple', target: 30, rewardEco: 1350, rewardSeeds: [{ seedId: 'apple_seed', count: 5 }], description: 'Продайте 30 яблок' },
   { id: 'dq_179', type: 'harvest_seed', page: 3, itemId: 'bamboo_seed', target: 80, rewardEco: 1200, description: 'Вырастите 80 бамбуков' },
   { id: 'dq_180', type: 'harvest_seed', page: 3, itemId: 'cherry_seed', target: 70, rewardEco: 1300, rewardSeeds: [{ seedId: 'cherry_seed', count: 5 }], description: 'Вырастите 70 вишен' },
+  
+  // Переработка (начиная с 3 страницы)
+  { id: 'dq_181', type: 'process_item', page: 3, itemId: 'winery', target: 2, rewardEco: 1000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 2 }], description: 'Сделайте в винокурне 2 продукта' },
+  { id: 'dq_182', type: 'process_item', page: 3, itemId: 'cannery', target: 3, rewardEco: 1100, rewardSeeds: [{ seedId: 'tomato_seed', count: 3 }], description: 'Сделайте в консервной 3 продукта' },
+  { id: 'dq_183', type: 'process_item', page: 3, itemId: 'oil_press', target: 2, rewardEco: 1200, rewardBoosters: [{ boosterId: 'booster_fertilizer', count: 1 }], description: 'Сделайте в маслобойне 2 продукта' },
+  { id: 'dq_184', type: 'process_item', page: 3, itemId: 'juicer', target: 4, rewardEco: 950, description: 'Сделайте в соковыжималке 4 продукта' },
+  { id: 'dq_185', type: 'process_item', page: 3, itemId: 'bakery', target: 3, rewardEco: 1050, rewardSeeds: [{ seedId: 'wheat_seed', count: 5 }], description: 'Сделайте в пекарне 3 продукта' },
 ];
 
 // Генерация дополнительных квестов до 2000+
@@ -416,6 +425,40 @@ function generateMassQuests(): DealerQuest[] {
       rewardBoosters: idx >= 2 ? [{ boosterId: 'booster_speedup', count: 4 }, { boosterId: 'booster_fertilizer', count: 3 }] : undefined,
       rewardSeeds: idx === 3 ? [{ seedId: 'dragon_seed', count: 1 }] : undefined,
       description: `Выполните ${target} синтезов`
+    });
+  });
+  
+  // Переработка для страницы 4
+  const buildingIds = ['winery', 'cannery', 'oil_press', 'spinnery', 'dryer', 'juicer', 'coffee_roaster', 'cheese_factory', 'honey_extractor', 'mill', 'bakery', 'brewery'];
+  const buildingNames: Record<string, string> = {
+    winery: 'винокурне',
+    cannery: 'консервной',
+    oil_press: 'маслобойне',
+    spinnery: 'прядильне',
+    dryer: 'сушильне',
+    juicer: 'соковыжималке',
+    coffee_roaster: 'кофейне',
+    cheese_factory: 'сырной',
+    honey_extractor: 'медогонке',
+    mill: 'мельнице',
+    bakery: 'пекарне',
+    brewery: 'пивоварне',
+  };
+  
+  buildingIds.forEach((buildingId, idx) => {
+    const targets = [5, 8, 10, 15];
+    targets.forEach((target, tIdx) => {
+      quests.push({
+        id: `dq_${questId++}`,
+        type: 'process_item',
+        page: 4,
+        itemId: buildingId,
+        target,
+        rewardEco: 2000 + (target * 100) + (idx * 50),
+        rewardBoosters: tIdx >= 2 ? [{ boosterId: 'booster_speedup', count: 3 }] : undefined,
+        rewardSeeds: tIdx === 3 ? [{ seedId: 'apple_seed', count: 3 }] : undefined,
+        description: `Сделайте в ${buildingNames[buildingId] || buildingId} ${target} продуктов`
+      });
     });
   });
   
@@ -734,6 +777,108 @@ function generateMassQuests(): DealerQuest[] {
     { id: `dq_${questId++}`, type: 'use_booster', page: 6, itemId: 'booster_fertilizer', target: 60, rewardEco: 4000, rewardBoosters: [{ boosterId: 'booster_fertilizer', count: 20 }], description: 'Используйте 60 удобрений' }
   );
   
+  // Переработка для страницы 5
+  buildingIds.forEach((buildingId, idx) => {
+    const targets = [15, 25, 35];
+    targets.forEach((target, tIdx) => {
+      quests.push({
+        id: `dq_${questId++}`,
+        type: 'process_item',
+        page: 5,
+        itemId: buildingId,
+        target,
+        rewardEco: 3000 + (target * 150) + (idx * 100),
+        rewardBoosters: tIdx >= 1 ? [{ boosterId: 'booster_speedup', count: 4 }, { boosterId: 'booster_fertilizer', count: 3 }] : undefined,
+        rewardSeeds: tIdx === 2 ? [{ seedId: 'grape_seed', count: 2 }] : undefined,
+        description: `Сделайте в ${buildingNames[buildingId] || buildingId} ${target} продуктов`
+      });
+    });
+  });
+  
+  // Продажа переработанных продуктов для страницы 5
+  const processedItemsPage5: Array<{ id: string; name: string; targets: number[] }> = [
+    { id: 'wine', name: 'вино', targets: [20, 30, 40] },
+    { id: 'canned_fruit', name: 'консервы', targets: [25, 35, 50] },
+    { id: 'oil', name: 'растительное масло', targets: [30, 40, 60] },
+    { id: 'juice', name: 'сок', targets: [35, 50, 70] },
+    { id: 'bread', name: 'хлеб', targets: [25, 40, 55] },
+    { id: 'flour', name: 'мука', targets: [30, 45, 60] },
+    { id: 'cheese', name: 'сыр', targets: [15, 25, 35] },
+    { id: 'honey', name: 'мед', targets: [20, 30, 40] },
+    { id: 'roasted_coffee', name: 'обжаренный кофе', targets: [15, 25, 35] },
+    { id: 'beer', name: 'пиво', targets: [12, 20, 30] }
+  ];
+  
+  processedItemsPage5.forEach((item, idx) => {
+    item.targets.forEach((target, tIdx) => {
+      quests.push({
+        id: `dq_${questId++}`,
+        type: 'sell_fruit',
+        page: 5,
+        itemId: item.id,
+        target,
+        rewardEco: 3500 + (target * 200) + (idx * 100),
+        rewardBoosters: tIdx >= 1 ? [{ boosterId: 'booster_speedup', count: 5 }, { boosterId: 'booster_fertilizer', count: 4 }] : undefined,
+        rewardSeeds: tIdx === 2 ? [{ seedId: 'apple_seed', count: 2 }] : undefined,
+        description: `Продайте ${target} ${item.name}`
+      });
+    });
+  });
+  
+  // Переработка для страницы 6
+  buildingIds.forEach((buildingId, idx) => {
+    const targets = [50, 75, 100];
+    targets.forEach((target, tIdx) => {
+      quests.push({
+        id: `dq_${questId++}`,
+        type: 'process_item',
+        page: 6,
+        itemId: buildingId,
+        target,
+        rewardEco: 5000 + (target * 200) + (idx * 200),
+        rewardBoosters: [{ boosterId: 'booster_speedup', count: 5 }, { boosterId: 'booster_fertilizer', count: 5 }],
+        rewardSeeds: tIdx === 2 ? [{ seedId: 'dragon_seed', count: 1 }] : undefined,
+        description: `Сделайте в ${buildingNames[buildingId] || buildingId} ${target} продуктов`
+      });
+    });
+  });
+  
+  // Продажа переработанных продуктов для страницы 6
+  const processedItemsPage6: Array<{ id: string; name: string; targets: number[] }> = [
+    { id: 'wine', name: 'вино', targets: [80, 120, 150] },
+    { id: 'premium_wine', name: 'премиум вино', targets: [20, 30, 50] },
+    { id: 'champagne', name: 'шампанское', targets: [5, 10, 15] },
+    { id: 'canned_fruit', name: 'консервы', targets: [100, 150, 200] },
+    { id: 'oil', name: 'растительное масло', targets: [120, 180, 250] },
+    { id: 'premium_oil', name: 'премиум масло', targets: [15, 25, 40] },
+    { id: 'juice', name: 'сок', targets: [150, 200, 300] },
+    { id: 'bread', name: 'хлеб', targets: [100, 150, 200] },
+    { id: 'flour', name: 'мука', targets: [120, 180, 250] },
+    { id: 'cheese', name: 'сыр', targets: [60, 90, 120] },
+    { id: 'honey', name: 'мед', targets: [80, 120, 150] },
+    { id: 'nectar', name: 'нектар', targets: [10, 20, 30] },
+    { id: 'roasted_coffee', name: 'обжаренный кофе', targets: [60, 100, 140] },
+    { id: 'beer', name: 'пиво', targets: [50, 80, 120] },
+    { id: 'silk', name: 'шелк', targets: [25, 40, 60] },
+    { id: 'premium_jam', name: 'премиум варенье', targets: [30, 50, 80] }
+  ];
+  
+  processedItemsPage6.forEach((item, idx) => {
+    item.targets.forEach((target, tIdx) => {
+      quests.push({
+        id: `dq_${questId++}`,
+        type: 'sell_fruit',
+        page: 6,
+        itemId: item.id,
+        target,
+        rewardEco: 4500 + (target * 250) + (idx * 150),
+        rewardBoosters: [{ boosterId: 'booster_speedup', count: 5 }, { boosterId: 'booster_fertilizer', count: 5 }],
+        rewardSeeds: tIdx === 2 && (item.id === 'champagne' || item.id === 'nectar' || item.id === 'premium_oil') ? [{ seedId: 'dragon_seed', count: 1 }] : undefined,
+        description: `Продайте ${target} ${item.name}`
+      });
+    });
+  });
+  
   return quests;
 }
 
@@ -747,13 +892,164 @@ export function getRandomQuestFromPage(page: number): DealerQuest | null {
   return pageQuests[Math.floor(Math.random() * pageQuests.length)];
 }
 
-// Функция для получения квеста по ID
+// Функция для получения квеста по ID (включая daily/weekly)
 export function getQuestById(questId: string): DealerQuest | null {
-  return ALL_DEALER_QUESTS.find(q => q.id === questId) || null;
+  return ALL_DEALER_QUESTS.find(q => q.id === questId) 
+    || DAILY_QUESTS.find(q => q.id === questId) 
+    || WEEKLY_QUESTS.find(q => q.id === questId) 
+    || null;
 }
 
 // Функция для получения всех квестов страницы
 export function getQuestsByPage(page: number): DealerQuest[] {
   return ALL_DEALER_QUESTS.filter(q => q.page === page);
+}
+
+// ============ ЕЖЕДНЕВНЫЕ КВЕСТЫ (page: 'daily') ============
+// Сложные квесты с наградами ×5
+export const DAILY_QUESTS: DealerQuest[] = [
+  // Продать плоды конкретного типа
+  { id: 'daily_001', type: 'sell_fruit', page: 'daily', itemId: 'acorn', target: 200, rewardEco: 500, rewardSeeds: [{ seedId: 'oak_seed', count: 10 }], description: 'Продайте 200 жёлудей' },
+  { id: 'daily_002', type: 'sell_fruit', page: 'daily', itemId: 'lily', target: 250, rewardEco: 600, rewardBoosters: [{ boosterId: 'booster_watering_can', count: 5 }], description: 'Продайте 250 лилий' },
+  { id: 'daily_003', type: 'sell_fruit', page: 'daily', itemId: 'carrot', target: 300, rewardEco: 700, rewardSeeds: [{ seedId: 'carrot_seed', count: 15 }], description: 'Продайте 300 морковок' },
+  { id: 'daily_004', type: 'sell_fruit', page: 'daily', itemId: 'tomato', target: 200, rewardEco: 650, rewardBoosters: [{ boosterId: 'booster_speedup', count: 3 }], description: 'Продайте 200 помидоров' },
+  { id: 'daily_005', type: 'sell_fruit', page: 'daily', itemId: 'potato', target: 250, rewardEco: 600, rewardSeeds: [{ seedId: 'potato_seed', count: 12 }], description: 'Продайте 250 картофелин' },
+  { id: 'daily_006', type: 'sell_fruit', page: 'daily', itemId: 'mushroom', target: 350, rewardEco: 750, rewardSeeds: [{ seedId: 'mushroom_seed', count: 20 }], description: 'Продайте 350 грибов' },
+  { id: 'daily_007', type: 'sell_fruit', page: 'daily', itemId: 'berry', target: 280, rewardEco: 720, rewardBoosters: [{ boosterId: 'booster_fertilizer', count: 2 }], description: 'Продайте 280 ягод' },
+  { id: 'daily_008', type: 'sell_fruit', page: 'daily', itemId: 'sunflower', target: 220, rewardEco: 680, rewardSeeds: [{ seedId: 'sunflower_seed', count: 10 }], description: 'Продайте 220 подсолнухов' },
+  { id: 'daily_009', type: 'sell_fruit', page: 'daily', itemId: 'pepper', target: 150, rewardEco: 800, rewardBoosters: [{ boosterId: 'booster_speedup', count: 4 }], description: 'Продайте 150 перцев' },
+  { id: 'daily_010', type: 'sell_fruit', page: 'daily', itemId: 'corn', target: 140, rewardEco: 850, rewardSeeds: [{ seedId: 'corn_seed', count: 8 }], description: 'Продайте 140 кукуруз' },
+  { id: 'daily_011', type: 'sell_fruit', page: 'daily', itemId: 'wheat', target: 160, rewardEco: 780, rewardSeeds: [{ seedId: 'wheat_seed', count: 10 }], description: 'Продайте 160 пшениц' },
+  { id: 'daily_012', type: 'sell_fruit', page: 'daily', itemId: 'rice', target: 150, rewardEco: 820, rewardBoosters: [{ boosterId: 'booster_watering_can', count: 4 }], description: 'Продайте 150 рисов' },
+  { id: 'daily_013', type: 'sell_fruit', page: 'daily', itemId: 'bean', target: 170, rewardEco: 790, rewardSeeds: [{ seedId: 'bean_seed', count: 9 }], description: 'Продайте 170 фасолей' },
+  { id: 'daily_014', type: 'sell_fruit', page: 'daily', itemId: 'pinecone', target: 100, rewardEco: 900, rewardSeeds: [{ seedId: 'fir_seed', count: 5 }], description: 'Продайте 100 шишек' },
+  { id: 'daily_015', type: 'sell_fruit', page: 'daily', itemId: 'rose', target: 80, rewardEco: 950, rewardBoosters: [{ boosterId: 'booster_fertilizer', count: 3 }], description: 'Продайте 80 роз' },
+  { id: 'daily_016', type: 'sell_fruit', page: 'daily', itemId: 'cactus_fruit', target: 60, rewardEco: 1000, rewardSeeds: [{ seedId: 'cactus_seed', count: 4 }], description: 'Продайте 60 плодов кактуса' },
+  { id: 'daily_017', type: 'sell_fruit', page: 'daily', itemId: 'bamboo_shoot', target: 50, rewardEco: 1100, rewardBoosters: [{ boosterId: 'booster_speedup', count: 5 }], description: 'Продайте 50 ростков бамбука' },
+  { id: 'daily_018', type: 'sell_fruit', page: 'daily', itemId: 'cherry', target: 40, rewardEco: 1200, rewardSeeds: [{ seedId: 'cherry_seed', count: 3 }], description: 'Продайте 40 вишен' },
+  { id: 'daily_019', type: 'sell_fruit', page: 'daily', itemId: 'apple', target: 30, rewardEco: 1300, rewardSeeds: [{ seedId: 'apple_seed', count: 2 }], description: 'Продайте 30 яблок' },
+  
+  // Потратить ECO
+  { id: 'daily_020', type: 'spend_amount', page: 'daily', target: 10000, rewardEco: 1000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 3 }, { boosterId: 'booster_fertilizer', count: 2 }], description: 'Потратьте 10000 $ECO' },
+  { id: 'daily_021', type: 'spend_amount', page: 'daily', target: 15000, rewardEco: 1500, rewardSeeds: [{ seedId: 'apple_seed', count: 3 }], description: 'Потратьте 15000 $ECO' },
+  { id: 'daily_022', type: 'spend_amount', page: 'daily', target: 20000, rewardEco: 2000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 5 }], description: 'Потратьте 20000 $ECO' },
+  { id: 'daily_023', type: 'spend_amount', page: 'daily', target: 25000, rewardEco: 2500, rewardSeeds: [{ seedId: 'grape_seed', count: 2 }], description: 'Потратьте 25000 $ECO' },
+  { id: 'daily_024', type: 'spend_amount', page: 'daily', target: 30000, rewardEco: 3000, rewardBoosters: [{ boosterId: 'booster_fertilizer', count: 5 }], description: 'Потратьте 30000 $ECO' },
+  { id: 'daily_025', type: 'spend_amount', page: 'daily', target: 50000, rewardEco: 5000, rewardSeeds: [{ seedId: 'dragon_seed', count: 1 }], description: 'Потратьте 50000 $ECO' },
+  
+  // Продать на сумму
+  { id: 'daily_026', type: 'sell_amount', page: 'daily', target: 50000, rewardEco: 2000, rewardSeeds: [{ seedId: 'apple_seed', count: 5 }], description: 'Продайте плодов на сумму 50000 $ECO' },
+  { id: 'daily_027', type: 'sell_amount', page: 'daily', target: 75000, rewardEco: 3000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 4 }], description: 'Продайте плодов на сумму 75000 $ECO' },
+  { id: 'daily_028', type: 'sell_amount', page: 'daily', target: 100000, rewardEco: 4000, rewardSeeds: [{ seedId: 'cherry_seed', count: 5 }], description: 'Продайте плодов на сумму 100000 $ECO' },
+  { id: 'daily_029', type: 'sell_amount', page: 'daily', target: 150000, rewardEco: 6000, rewardBoosters: [{ boosterId: 'booster_fertilizer', count: 4 }], description: 'Продайте плодов на сумму 150000 $ECO' },
+  { id: 'daily_030', type: 'sell_amount', page: 'daily', target: 200000, rewardEco: 8000, rewardSeeds: [{ seedId: 'grape_seed', count: 3 }], description: 'Продайте плодов на сумму 200000 $ECO' },
+  { id: 'daily_031', type: 'sell_amount', page: 'daily', target: 300000, rewardEco: 12000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 6 }, { boosterId: 'booster_fertilizer', count: 5 }], description: 'Продайте плодов на сумму 300000 $ECO' },
+  { id: 'daily_032', type: 'sell_amount', page: 'daily', target: 500000, rewardEco: 20000, rewardSeeds: [{ seedId: 'dragon_seed', count: 2 }], description: 'Продайте плодов на сумму 500000 $ECO' },
+  
+  // Вырастить семена
+  { id: 'daily_033', type: 'harvest_seed', page: 'daily', itemId: 'oak_seed', target: 500, rewardEco: 1500, rewardSeeds: [{ seedId: 'oak_seed', count: 20 }], description: 'Вырастите 500 дубов' },
+  { id: 'daily_034', type: 'harvest_seed', page: 'daily', itemId: 'carrot_seed', target: 600, rewardEco: 1800, rewardSeeds: [{ seedId: 'carrot_seed', count: 25 }], description: 'Вырастите 600 морковок' },
+  { id: 'daily_035', type: 'harvest_seed', page: 'daily', itemId: 'tomato_seed', target: 400, rewardEco: 1600, rewardBoosters: [{ boosterId: 'booster_speedup', count: 4 }], description: 'Вырастите 400 помидоров' },
+  { id: 'daily_036', type: 'harvest_seed', page: 'daily', itemId: 'lily_seed', target: 700, rewardEco: 1400, rewardSeeds: [{ seedId: 'lily_seed', count: 30 }], description: 'Вырастите 700 лилий' },
+  { id: 'daily_037', type: 'harvest_seed', page: 'daily', itemId: 'berry_seed', target: 550, rewardEco: 1700, rewardSeeds: [{ seedId: 'berry_seed', count: 22 }], description: 'Вырастите 550 ягод' },
+  
+  // Посадить семена
+  { id: 'daily_038', type: 'plant_seed', page: 'daily', itemId: 'oak_seed', target: 300, rewardEco: 1200, rewardSeeds: [{ seedId: 'oak_seed', count: 15 }], description: 'Посадите 300 семян дуба' },
+  { id: 'daily_039', type: 'plant_seed', page: 'daily', itemId: 'carrot_seed', target: 350, rewardEco: 1400, rewardSeeds: [{ seedId: 'carrot_seed', count: 18 }], description: 'Посадите 350 семян моркови' },
+  { id: 'daily_040', type: 'plant_seed', page: 'daily', itemId: 'tomato_seed', target: 250, rewardEco: 1300, rewardBoosters: [{ boosterId: 'booster_watering_can', count: 5 }], description: 'Посадите 250 семян помидора' },
+  { id: 'daily_041', type: 'plant_seed', page: 'daily', itemId: 'fir_seed', target: 100, rewardEco: 1800, rewardSeeds: [{ seedId: 'fir_seed', count: 10 }], description: 'Посадите 100 семян ели' },
+  { id: 'daily_042', type: 'plant_seed', page: 'daily', itemId: 'rose_seed', target: 80, rewardEco: 2000, rewardSeeds: [{ seedId: 'rose_seed', count: 8 }], description: 'Посадите 80 семян розы' },
+  { id: 'daily_043', type: 'plant_seed', page: 'daily', itemId: 'bamboo_seed', target: 60, rewardEco: 2200, rewardBoosters: [{ boosterId: 'booster_speedup', count: 3 }], description: 'Посадите 60 семян бамбука' },
+  { id: 'daily_044', type: 'plant_seed', page: 'daily', itemId: 'cherry_seed', target: 50, rewardEco: 2400, rewardSeeds: [{ seedId: 'cherry_seed', count: 5 }], description: 'Посадите 50 семян вишни' },
+  { id: 'daily_045', type: 'plant_seed', page: 'daily', itemId: 'apple_seed', target: 40, rewardEco: 2600, rewardSeeds: [{ seedId: 'apple_seed', count: 4 }], description: 'Посадите 40 семян яблони' },
+  
+  // Использовать бустеры
+  { id: 'daily_046', type: 'use_booster', page: 'daily', itemId: 'booster_watering_can', target: 50, rewardEco: 1500, rewardBoosters: [{ boosterId: 'booster_watering_can', count: 15 }], description: 'Используйте 50 леек' },
+  { id: 'daily_047', type: 'use_booster', page: 'daily', itemId: 'booster_speedup', target: 30, rewardEco: 2000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 10 }], description: 'Используйте 30 ускорителей роста' },
+  { id: 'daily_048', type: 'use_booster', page: 'daily', itemId: 'booster_fertilizer', target: 25, rewardEco: 1800, rewardBoosters: [{ boosterId: 'booster_fertilizer', count: 8 }], description: 'Используйте 25 удобрений' },
+  
+  // Создать гибриды
+  { id: 'daily_049', type: 'create_hybrid', page: 'daily', target: 20, rewardEco: 2500, rewardBoosters: [{ boosterId: 'booster_speedup', count: 5 }], description: 'Создайте 20 гибридов' },
+  { id: 'daily_050', type: 'create_hybrid', page: 'daily', target: 30, rewardEco: 3500, rewardSeeds: [{ seedId: 'apple_seed', count: 3 }], description: 'Создайте 30 гибридов' },
+  
+  // Выполнить синтез
+  { id: 'daily_051', type: 'do_synthesis', page: 'daily', target: 15, rewardEco: 2800, rewardBoosters: [{ boosterId: 'booster_fertilizer', count: 4 }], description: 'Выполните 15 синтезов' },
+  { id: 'daily_052', type: 'do_synthesis', page: 'daily', target: 25, rewardEco: 4000, rewardSeeds: [{ seedId: 'cherry_seed', count: 3 }], description: 'Выполните 25 синтезов' },
+];
+
+// ============ ЕЖЕНЕДЕЛЬНЫЕ КВЕСТЫ (page: 'weekly') ============
+// Очень сложные квесты с наградами ×20
+export const WEEKLY_QUESTS: DealerQuest[] = [
+  // Продать на очень большую сумму
+  { id: 'weekly_001', type: 'sell_amount', page: 'weekly', target: 1000000, rewardEco: 50000, rewardSeeds: [{ seedId: 'apple_seed', count: 10 }, { seedId: 'cherry_seed', count: 10 }], description: 'Продайте плодов на сумму 1000000 $ECO' },
+  { id: 'weekly_002', type: 'sell_amount', page: 'weekly', target: 2000000, rewardEco: 100000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 20 }, { boosterId: 'booster_fertilizer', count: 15 }], description: 'Продайте плодов на сумму 2000000 $ECO' },
+  { id: 'weekly_003', type: 'sell_amount', page: 'weekly', target: 5000000, rewardEco: 250000, rewardSeeds: [{ seedId: 'grape_seed', count: 10 }, { seedId: 'dragon_seed', count: 5 }], description: 'Продайте плодов на сумму 5000000 $ECO' },
+  { id: 'weekly_004', type: 'sell_amount', page: 'weekly', target: 10000000, rewardEco: 500000, rewardSeeds: [{ seedId: 'phoenix_seed', count: 3 }], description: 'Продайте плодов на сумму 10000000 $ECO' },
+  
+  // Потратить огромную сумму
+  { id: 'weekly_005', type: 'spend_amount', page: 'weekly', target: 500000, rewardEco: 100000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 15 }, { boosterId: 'booster_fertilizer', count: 15 }], description: 'Потратьте 500000 $ECO' },
+  { id: 'weekly_006', type: 'spend_amount', page: 'weekly', target: 1000000, rewardEco: 200000, rewardSeeds: [{ seedId: 'dragon_seed', count: 5 }, { seedId: 'grape_seed', count: 8 }], description: 'Потратьте 1000000 $ECO' },
+  { id: 'weekly_007', type: 'spend_amount', page: 'weekly', target: 2000000, rewardEco: 400000, rewardSeeds: [{ seedId: 'phoenix_seed', count: 2 }], description: 'Потратьте 2000000 $ECO' },
+  
+  // Продать огромное количество плодов
+  { id: 'weekly_008', type: 'sell_fruit', page: 'weekly', itemId: 'acorn', target: 2000, rewardEco: 80000, rewardSeeds: [{ seedId: 'oak_seed', count: 50 }], description: 'Продайте 2000 жёлудей' },
+  { id: 'weekly_009', type: 'sell_fruit', page: 'weekly', itemId: 'carrot', target: 2500, rewardEco: 90000, rewardSeeds: [{ seedId: 'carrot_seed', count: 60 }], description: 'Продайте 2500 морковок' },
+  { id: 'weekly_010', type: 'sell_fruit', page: 'weekly', itemId: 'tomato', target: 1500, rewardEco: 85000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 12 }], description: 'Продайте 1500 помидоров' },
+  { id: 'weekly_011', type: 'sell_fruit', page: 'weekly', itemId: 'apple', target: 300, rewardEco: 120000, rewardSeeds: [{ seedId: 'apple_seed', count: 15 }], description: 'Продайте 300 яблок' },
+  { id: 'weekly_012', type: 'sell_fruit', page: 'weekly', itemId: 'cherry', target: 400, rewardEco: 110000, rewardSeeds: [{ seedId: 'cherry_seed', count: 12 }], description: 'Продайте 400 вишен' },
+  { id: 'weekly_013', type: 'sell_fruit', page: 'weekly', itemId: 'grape', target: 200, rewardEco: 150000, rewardSeeds: [{ seedId: 'grape_seed', count: 8 }], description: 'Продайте 200 виноградов' },
+  { id: 'weekly_014', type: 'sell_fruit', page: 'weekly', itemId: 'dragon_fruit', target: 50, rewardEco: 200000, rewardSeeds: [{ seedId: 'dragon_seed', count: 5 }], description: 'Продайте 50 плодов дракона' },
+  { id: 'weekly_015', type: 'sell_fruit', page: 'weekly', itemId: 'phoenix_feather', target: 10, rewardEco: 500000, rewardSeeds: [{ seedId: 'phoenix_seed', count: 3 }], description: 'Продайте 10 перьев феникса' },
+  
+  // Вырастить огромное количество
+  { id: 'weekly_016', type: 'harvest_seed', page: 'weekly', itemId: 'oak_seed', target: 2000, rewardEco: 100000, rewardSeeds: [{ seedId: 'oak_seed', count: 100 }], description: 'Вырастите 2000 дубов' },
+  { id: 'weekly_017', type: 'harvest_seed', page: 'weekly', itemId: 'carrot_seed', target: 2500, rewardEco: 120000, rewardSeeds: [{ seedId: 'carrot_seed', count: 120 }], description: 'Вырастите 2500 морковок' },
+  { id: 'weekly_018', type: 'harvest_seed', page: 'weekly', itemId: 'apple_seed', target: 300, rewardEco: 150000, rewardSeeds: [{ seedId: 'apple_seed', count: 20 }], description: 'Вырастите 300 яблонь' },
+  { id: 'weekly_019', type: 'harvest_seed', page: 'weekly', itemId: 'cherry_seed', target: 400, rewardEco: 140000, rewardSeeds: [{ seedId: 'cherry_seed', count: 25 }], description: 'Вырастите 400 вишен' },
+  { id: 'weekly_020', type: 'harvest_seed', page: 'weekly', itemId: 'grape_seed', target: 200, rewardEco: 180000, rewardSeeds: [{ seedId: 'grape_seed', count: 15 }], description: 'Вырастите 200 виноградов' },
+  { id: 'weekly_021', type: 'harvest_seed', page: 'weekly', itemId: 'dragon_seed', target: 80, rewardEco: 250000, rewardSeeds: [{ seedId: 'dragon_seed', count: 10 }], description: 'Вырастите 80 драконов' },
+  { id: 'weekly_022', type: 'harvest_seed', page: 'weekly', itemId: 'phoenix_seed', target: 20, rewardEco: 600000, rewardSeeds: [{ seedId: 'phoenix_seed', count: 5 }], description: 'Вырастите 20 фениксов' },
+  
+  // Посадить огромное количество
+  { id: 'weekly_023', type: 'plant_seed', page: 'weekly', itemId: 'oak_seed', target: 1500, rewardEco: 90000, rewardSeeds: [{ seedId: 'oak_seed', count: 80 }], description: 'Посадите 1500 семян дуба' },
+  { id: 'weekly_024', type: 'plant_seed', page: 'weekly', itemId: 'carrot_seed', target: 1800, rewardEco: 110000, rewardSeeds: [{ seedId: 'carrot_seed', count: 100 }], description: 'Посадите 1800 семян моркови' },
+  { id: 'weekly_025', type: 'plant_seed', page: 'weekly', itemId: 'apple_seed', target: 250, rewardEco: 160000, rewardSeeds: [{ seedId: 'apple_seed', count: 18 }], description: 'Посадите 250 семян яблони' },
+  { id: 'weekly_026', type: 'plant_seed', page: 'weekly', itemId: 'cherry_seed', target: 300, rewardEco: 150000, rewardSeeds: [{ seedId: 'cherry_seed', count: 15 }], description: 'Посадите 300 семян вишни' },
+  { id: 'weekly_027', type: 'plant_seed', page: 'weekly', itemId: 'grape_seed', target: 150, rewardEco: 200000, rewardSeeds: [{ seedId: 'grape_seed', count: 12 }], description: 'Посадите 150 семян винограда' },
+  { id: 'weekly_028', type: 'plant_seed', page: 'weekly', itemId: 'dragon_seed', target: 60, rewardEco: 300000, rewardSeeds: [{ seedId: 'dragon_seed', count: 8 }], description: 'Посадите 60 семян дракона' },
+  { id: 'weekly_029', type: 'plant_seed', page: 'weekly', itemId: 'phoenix_seed', target: 15, rewardEco: 750000, rewardSeeds: [{ seedId: 'phoenix_seed', count: 5 }], description: 'Посадите 15 семян феникса' },
+  
+  // Использовать много бустеров
+  { id: 'weekly_030', type: 'use_booster', page: 'weekly', itemId: 'booster_watering_can', target: 200, rewardEco: 80000, rewardBoosters: [{ boosterId: 'booster_watering_can', count: 60 }], description: 'Используйте 200 леек' },
+  { id: 'weekly_031', type: 'use_booster', page: 'weekly', itemId: 'booster_speedup', target: 150, rewardEco: 120000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 50 }], description: 'Используйте 150 ускорителей роста' },
+  { id: 'weekly_032', type: 'use_booster', page: 'weekly', itemId: 'booster_fertilizer', target: 120, rewardEco: 100000, rewardBoosters: [{ boosterId: 'booster_fertilizer', count: 40 }], description: 'Используйте 120 удобрений' },
+  
+  // Создать много гибридов
+  { id: 'weekly_033', type: 'create_hybrid', page: 'weekly', target: 200, rewardEco: 300000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 20 }, { boosterId: 'booster_fertilizer', count: 20 }], description: 'Создайте 200 гибридов' },
+  { id: 'weekly_034', type: 'create_hybrid', page: 'weekly', target: 300, rewardEco: 450000, rewardSeeds: [{ seedId: 'dragon_seed', count: 10 }], description: 'Создайте 300 гибридов' },
+  { id: 'weekly_035', type: 'create_hybrid', page: 'weekly', target: 500, rewardEco: 750000, rewardSeeds: [{ seedId: 'phoenix_seed', count: 5 }], description: 'Создайте 500 гибридов' },
+  
+  // Выполнить много синтезов
+  { id: 'weekly_036', type: 'do_synthesis', page: 'weekly', target: 200, rewardEco: 350000, rewardBoosters: [{ boosterId: 'booster_speedup', count: 20 }, { boosterId: 'booster_fertilizer', count: 20 }], description: 'Выполните 200 синтезов' },
+  { id: 'weekly_037', type: 'do_synthesis', page: 'weekly', target: 300, rewardEco: 500000, rewardSeeds: [{ seedId: 'watermelon_seed', count: 3 }], description: 'Выполните 300 синтезов' },
+  { id: 'weekly_038', type: 'do_synthesis', page: 'weekly', target: 500, rewardEco: 800000, rewardSeeds: [{ seedId: 'phoenix_seed', count: 5 }, { seedId: 'dragon_seed', count: 5 }], description: 'Выполните 500 синтезов' },
+];
+
+// Функция для получения случайного ежедневного квеста
+export function getRandomDailyQuest(): DealerQuest {
+  return DAILY_QUESTS[Math.floor(Math.random() * DAILY_QUESTS.length)];
+}
+
+// Функция для получения случайного еженедельного квеста
+export function getRandomWeeklyQuest(): DealerQuest {
+  return WEEKLY_QUESTS[Math.floor(Math.random() * WEEKLY_QUESTS.length)];
+}
+
+// Функция для получения квеста по ID (включая daily/weekly)
+export function getAllQuestById(questId: string): DealerQuest | null {
+  return ALL_DEALER_QUESTS.find(q => q.id === questId) 
+    || DAILY_QUESTS.find(q => q.id === questId) 
+    || WEEKLY_QUESTS.find(q => q.id === questId) 
+    || null;
 }
 

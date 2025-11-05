@@ -1,6 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { TonConnectButton } from '@tonconnect/ui-react';
+import { useTonConnect } from '../hooks/useTonConnect';
 
 export default function TonInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { walletAddress, isConnected, disconnectWallet } = useTonConnect();
+
   return (
     <AnimatePresence>
       {open && (
@@ -24,13 +28,30 @@ export default function TonInfoModal({ open, onClose }: { open: boolean; onClose
               <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">✕</button>
             </div>
 
-            <div className="mb-4">
-              <button className="w-full py-3 rounded-xl bg-blue-500 text-white hover:bg-blue-600 font-semibold">
-                Подключить TON кошелек
-              </button>
-            </div>
+            {isConnected && walletAddress ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-green-50 border border-green-200">
+                  <div className="font-semibold text-green-800 mb-2">✅ Кошелек подключен</div>
+                  <div className="text-sm text-green-700 font-mono break-all">
+                    {walletAddress}
+                  </div>
+                </div>
+                <button
+                  onClick={disconnectWallet}
+                  className="w-full py-3 rounded-xl bg-red-500 text-white hover:bg-red-600 font-semibold"
+                >
+                  Отключить кошелек
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex justify-center">
+                  <TonConnectButton />
+                </div>
+              </div>
+            )}
 
-            <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200">
+            <div className="mt-4 p-4 rounded-2xl bg-blue-50 border border-blue-200">
               <div className="font-semibold text-blue-800 mb-2">Для чего нужны TON?</div>
               <ul className="text-sm text-blue-900 list-disc pl-5 space-y-1">
                 <li>Покупка $ECO токенов</li>

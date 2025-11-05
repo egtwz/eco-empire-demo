@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useGameLogic } from '../hooks/useGameLogic';
-import { HYBRID_RECIPES, HybridRecipe } from '../data/hybrids';
+import { HYBRID_RECIPES, HybridRecipe, calculateHybridSeedPrice, calculateHybridFruitPrice, calculateHybridGrowTime } from '../data/hybrids';
 import IngredientSelector from './IngredientSelector';
 import CraftSuccessModal from './CraftSuccessModal';
+import { getSeedInfo, getFruitInfo } from '../utils/hybridUtils';
 
 interface Props {
   game: ReturnType<typeof useGameLogic>;
@@ -110,10 +111,32 @@ export default function HybridCrafting({ game }: Props) {
 
   const getItemInfo = (id: string, type: 'seed' | 'fruit') => {
     if (type === 'seed') {
-      return state.inventory.find(i => i.id === id && i.type === type);
+      const seedInfo = getSeedInfo(id);
+      if (seedInfo) {
+        return {
+          name: seedInfo.name,
+          emoji: seedInfo.emoji
+        };
+      }
     } else {
-      return state.inventory.find(i => i.id === id && i.type === type);
+      const fruitInfo = getFruitInfo(id);
+      if (fruitInfo) {
+        return {
+          name: fruitInfo.name,
+          emoji: fruitInfo.emoji
+        };
+      }
     }
+    // Если не нашли через getSeedInfo/getFruitInfo, пытаемся найти в инвентаре
+    const invItem = state.inventory.find(i => i.id === id && i.type === type);
+    if (invItem) {
+      return {
+        name: invItem.name,
+        emoji: invItem.emoji
+      };
+    }
+    // Если ничего не найдено, возвращаем null
+    return null;
   };
 
   const getAvailableCount = (id: string, type: 'seed' | 'fruit') => {
@@ -195,9 +218,14 @@ export default function HybridCrafting({ game }: Props) {
 
           {tierRecipes.map((recipe) => {
             const locked = recipe.requiredLevel > state.level;
-            const seedPrice = 0; // Placeholder, actual calculation removed
-            const growTime = 0; // Placeholder, actual calculation removed
-            const fruitPrice = 0; // Placeholder, actual calculation removed
+            const seedPrice = calculateHybridSeedPrice(recipe.ingredients);
+            const growSeconds = calculateHybridGrowTime(recipe.ingredients);
+            const fruitPrice = calculateHybridFruitPrice(recipe.ingredients);
+            
+            // Форматируем время роста (только секунды)
+            const formatGrowTime = (seconds: number) => {
+              return `${seconds}с`;
+            };
             
             return (
             <div key={recipe.id} className={`p-3 rounded-2xl bg-white border border-gray-300 shadow-md ${locked ? 'opacity-70' : ''}`}>
@@ -215,7 +243,7 @@ export default function HybridCrafting({ game }: Props) {
                   <div className="text-xs text-gray-500 mt-1">{recipe.description}</div>
                   <div className="text-xs text-gray-700 mt-1 flex gap-3">
                     <span>🌱 Семя: {seedPrice} $ECO</span>
-                    <span>⏱ Рост: {growTime}с</span>
+                    <span>⏱ Рост: {formatGrowTime(growSeconds)}</span>
                   </div>
                   <div className="text-xs text-green-600 mt-0.5">
                     🍎 Фрукт: {fruitPrice} $ECO
@@ -244,6 +272,17 @@ export default function HybridCrafting({ game }: Props) {
                 {selectedRecipe.resultName}
               </span>
               <div className="text-sm text-gray-600 mt-2">{selectedRecipe.description}</div>
+              {(() => {
+                const growSeconds = calculateHybridGrowTime(selectedRecipe.ingredients);
+                if (growSeconds > 0) {
+                  return (
+                    <div className="text-xs text-blue-600 mt-2">
+                      ⏱️ Время роста: {growSeconds}с
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             <div className="space-y-3">

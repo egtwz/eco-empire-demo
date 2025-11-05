@@ -1,14 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useGameLogic } from '../hooks/useGameLogic';
 import SeedSelectModal from './SeedSelectModal';
-import RewardsModal from './RewardsModal';
-import NewsModal from './NewsModal';
+import House from './House';
 import { SYNTHESIS_PLANTS, SYNTHESIS_RECIPES } from '../data/synthesis';
 import { RARITY_COLORS } from '../data/seeds';
 import { BOOSTERS, BoosterId } from '../data/boosters';
 import BoosterSelectModal from './BoosterSelectModal';
 
-export default function Field({ game }: { game: ReturnType<typeof useGameLogic> }) {
+export default function Field({ game, fieldViewMode }: { game: ReturnType<typeof useGameLogic>; fieldViewMode: 'field' | 'house' }) {
   const { state, openSeedModal, closeSeedModal, seedSelectForCell, seedsInInventory, plantSeed, harvest, timeLeftForCell, addItemToInventory, startSynthesis, completeSynthesis } = game;
 
   const { getCurrentFieldSize, getNextUpgrade, upgradeField } = game;
@@ -16,8 +15,6 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
   const nextUpgrade = getNextUpgrade();
   const gridSize = Math.sqrt(currentSize);
 
-  const [showRewards, setShowRewards] = useState(false);
-  const [showNews, setShowNews] = useState(false);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [boosterCellId, setBoosterCellId] = useState<number | null>(null);
@@ -223,18 +220,10 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
   };
 
   return (
-    <div className="max-w-md mx-auto p-3 pt-6">
-
-      <div className="mb-4 grid grid-cols-2 gap-2">
-        <button onClick={() => setShowRewards(true)} className="py-3 rounded-xl bg-gradient-to-r from-yellow-500 to-yellow-600 text-white font-semibold shadow-md hover:from-yellow-600 hover:to-yellow-700">
-          🎁 Награды
-        </button>
-        <button onClick={() => setShowNews(true)} className="py-3 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold shadow-md hover:from-blue-600 hover:to-blue-700">
-          ℹ️ Информация
-        </button>
-      </div>
-
-      <div className={`grid gap-1 w-full mx-auto`} style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
+    <div className="max-w-md mx-auto px-3 pt-0 pb-3">
+      {fieldViewMode === 'field' ? (
+        <>
+          <div className={`grid gap-1 w-full mx-auto -mt-2`} style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
         {state.field.map((cell) => {
           // Проверяем есть ли активный синтез на этой клетке
           const activeSynthesis = state.synthesisActive?.find(s => s.cellId === cell.id);
@@ -334,6 +323,10 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
           </div>
         </div>
       )}
+        </>
+      ) : (
+        <House game={game} />
+      )}
 
       <SeedSelectModal
         open={seedSelectForCell !== null}
@@ -353,14 +346,11 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
         timeLeft={boosterCellId !== null ? timeLeftForCell(state.field[boosterCellId]) : null}
         blockedReason={boosterBlockReason}
       />
-
-      <RewardsModal open={showRewards} onClose={() => setShowRewards(false)} game={game} />
-      <NewsModal open={showNews} onClose={() => setShowNews(false)} />
       
       {/* Модалка подтверждения улучшения */}
       {showUpgradeConfirm && nextUpgrade && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={() => setShowUpgradeConfirm(false)}>
-          <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-sky-400 via-blue-400 to-sky-500 p-3" onClick={() => setShowUpgradeConfirm(false)}>
+          <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="text-lg font-bold mb-3 text-center">🏗️ Улучшить поле?</div>
             <div className="text-sm text-gray-700 mb-4 text-center">
               Поле увеличится с {Math.floor(gridSize)}×{Math.floor(gridSize)} до {Math.floor(Math.sqrt(nextUpgrade.size))}×{Math.floor(Math.sqrt(nextUpgrade.size))}
@@ -388,8 +378,8 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
 
       {/* Модалка ошибки */}
       {upgradeError && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={() => setUpgradeError(null)}>
-          <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-sky-400 via-blue-400 to-sky-500 p-3" onClick={() => setUpgradeError(null)}>
+          <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="text-lg font-bold mb-3 text-center text-red-600">⚠️ Невозможно улучшить</div>
             <div className="text-sm text-gray-700 mb-4 text-center">
               {upgradeError}
@@ -406,8 +396,8 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
 
       {/* Модалка синтеза */}
       {showSynthesisModal && synthesisCellId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={() => { setShowSynthesisModal(false); setSynthesisCellId(null); setSelectedSynthesisPlant(null); }}>
-          <div className="w-full max-w-md bg-white rounded-2xl p-5 shadow-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-sky-400 via-blue-400 to-sky-500 p-3" onClick={() => { setShowSynthesisModal(false); setSynthesisCellId(null); setSelectedSynthesisPlant(null); }}>
+          <div className="w-full max-w-md bg-white rounded-2xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="text-lg font-bold mb-3 text-center">🧬 Синтез растений</div>
             <div className="text-sm text-gray-600 mb-4 text-center">
               Выберите растение для синтеза
@@ -493,8 +483,8 @@ export default function Field({ game }: { game: ReturnType<typeof useGameLogic> 
 
       {/* Модалка результата синтеза */}
       {showResultModal && resultData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={() => { setShowResultModal(false); setResultData(null); }}>
-          <div className="w-full max-w-md bg-white rounded-2xl p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-sky-400 via-blue-400 to-sky-500 p-3" onClick={() => { setShowResultModal(false); setResultData(null); }}>
+          <div className="w-full max-w-md bg-white rounded-2xl p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {resultData.success ? (
               <>
                 <div className="text-lg font-bold mb-3 text-center text-green-600">✨ Успех!</div>

@@ -18,7 +18,7 @@ export default function NewsModal({ open, onClose }: { open: boolean; onClose: (
     { id: 'levels', emoji: '📈', title: 'Система уровней', bgColor: 'from-pink-50 to-pink-100', borderColor: 'border-pink-200', textColor: 'text-pink-900' },
     { id: 'rewards', emoji: '🎁', title: 'Система наград', bgColor: 'from-indigo-50 to-indigo-100', borderColor: 'border-indigo-200', textColor: 'text-indigo-900' },
     { id: 'profile', emoji: '👤', title: 'Профиль и статистика', bgColor: 'from-teal-50 to-teal-100', borderColor: 'border-teal-200', textColor: 'text-teal-900' },
-    { id: 'exchange', emoji: '📈', title: 'Биржа', bgColor: 'from-orange-50 to-orange-100', borderColor: 'border-orange-200', textColor: 'text-orange-900' },
+    { id: 'exchange', emoji: '📈', title: 'Квесты скупщика', bgColor: 'from-orange-50 to-orange-100', borderColor: 'border-orange-200', textColor: 'text-orange-900' },
     { id: 'tips', emoji: '💡', title: 'Советы для успеха', bgColor: 'from-red-50 to-red-100', borderColor: 'border-red-200', textColor: 'text-red-900' },
   ] as const;
 
@@ -220,23 +220,23 @@ export default function NewsModal({ open, onClose }: { open: boolean; onClose: (
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-3"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-sky-400 via-blue-400 to-sky-500 p-3"
           onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.96, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.96, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-            className="w-full max-w-md bg-white rounded-2xl p-5 shadow-lg max-h-[85vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
+          initial={{ scale: 0.96, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.96, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+          className="w-full max-w-md bg-white rounded-2xl p-5 shadow-2xl max-h-[66vh] overflow-hidden flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
               <div className="text-lg font-bold">ℹ️ Информация об игре</div>
               <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">✕</button>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 overflow-y-auto flex-1 pr-1">
               {sections.map((section) => (
                 <button
                   key={section.id}
@@ -259,7 +259,7 @@ export default function NewsModal({ open, onClose }: { open: boolean; onClose: (
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-3"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-sky-400 via-blue-400 to-sky-500 p-3"
           onClick={() => setSelectedSection(null)}
         >
           <motion.div
@@ -267,17 +267,17 @@ export default function NewsModal({ open, onClose }: { open: boolean; onClose: (
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.96, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-            className="w-full max-w-md bg-white rounded-2xl p-5 shadow-lg max-h-[85vh] overflow-y-auto"
+            className="w-full max-w-md bg-white rounded-2xl p-5 shadow-2xl max-h-[66vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
               <div className="text-lg font-bold">
                 {sections.find(s => s.id === selectedSection)?.emoji} {sections.find(s => s.id === selectedSection)?.title}
               </div>
               <button onClick={() => setSelectedSection(null)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">✕</button>
             </div>
 
-            <div>
+            <div className="overflow-y-auto flex-1 pr-1">
               {getSectionContent(selectedSection)}
             </div>
           </motion.div>

@@ -48,7 +48,7 @@ export default function Profile({ game, telegramId }: { game: ReturnType<typeof 
   };
 
   return (
-    <div className="max-w-md mx-auto p-3 pb-24">
+    <div className="max-w-md mx-auto p-3 pb-24" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 14px)' }}>
       <div className="text-xl font-bold text-center mb-4 text-[var(--text)]">👤 Профиль</div>
 
       {/* Профиль */}

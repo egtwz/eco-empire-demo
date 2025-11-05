@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { useShopStock } from '../hooks/useShopStock';
 import { SeedId, RARITY_COLORS } from '../data/seeds';
@@ -16,6 +16,24 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
   const [selectedSeed, setSelectedSeed] = useState<{ id: SeedId; name: string; emoji: string; price: number } | null>(null);
   const [seedInfo, setSeedInfo] = useState<any>(null);
   const [subscriptionType, setSubscriptionType] = useState<'plus' | 'premium' | null>(null);
+
+  // Высота фиксированного блока табов, чтобы контент начинался сразу под ним
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const [tabsHeight, setTabsHeight] = useState<number>(0);
+
+  useEffect(() => {
+    const update = () => {
+      if (tabsRef.current) {
+        setTabsHeight(tabsRef.current.offsetHeight || 0);
+      }
+    };
+    update();
+    window.addEventListener('resize', update);
+    // Пересчитываем при смене активной вкладки (высота кнопок может отличаться)
+    return () => {
+      window.removeEventListener('resize', update);
+    };
+  }, [activeTab]);
 
   const handleBuy = (count: number) => {
     if (selectedSeed) {
@@ -52,23 +70,31 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
 
   return (
     <>
-      <div className="max-w-md mx-auto p-3 pb-24">
-        {/* Вкладки */}
-        <div className="flex gap-2 mb-4">
-          <TabButton id="seeds" label="Семена" emoji="🌱" color="bg-gradient-to-r from-green-500 to-green-600" borderColor="green-700" />
-          <TabButton id="boosters" label="Бустеры" emoji="⚡" color="bg-gradient-to-r from-yellow-500 to-orange-500" borderColor="orange-600" />
-          <TabButton id="other" label="Прочее" emoji="💎" color="bg-gradient-to-r from-purple-500 to-pink-500" borderColor="pink-600" />
+      <div className="max-w-md mx-auto pb-24">
+        {/* Вкладки - закреплены при скролле в самом верху */}
+        <div ref={tabsRef} className="fixed z-10 bg-transparent w-full max-w-md left-1/2 -translate-x-1/2 pt-0" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 76px)' }}>
+          <div className="px-3">
+            <div className="flex gap-2 mb-0">
+              <TabButton id="seeds" label="Семена" emoji="🌱" color="bg-gradient-to-r from-green-500 to-green-600" borderColor="green-700" />
+              <TabButton id="boosters" label="Бустеры" emoji="⚡" color="bg-gradient-to-r from-yellow-500 to-orange-500" borderColor="orange-600" />
+              <TabButton id="other" label="Прочее" emoji="💎" color="bg-gradient-to-r from-purple-500 to-pink-500" borderColor="pink-600" />
+            </div>
+            {activeTab === 'seeds' && (
+              <div className="mt-2 text-center text-sm text-gray-600 bg-gray-50 p-2 rounded-xl border border-gray-300">
+                Следующее обновление через: {Math.floor(timeToRefresh / 60)}:{String(timeToRefresh % 60).padStart(2, '0')}
+              </div>
+            )}
+          </div>
         </div>
+        
+        {/* Отступ для контента: высота таб-кнопок + небольшой запас */}
+        <div style={{ height: `${tabsHeight + 4}px` }} />
 
         {/* Контент вкладок */}
-        {activeTab === 'seeds' && (
-          <div className="space-y-3">
-            {/* Таймер обновления */}
-            <div className="text-center text-sm text-gray-600 bg-gray-50 p-2 rounded-xl border border-gray-300">
-              Следующее обновление через: {Math.floor(timeToRefresh / 60)}:{String(timeToRefresh % 60).padStart(2, '0')}
-            </div>
-            
-            <div className="grid grid-cols-1 gap-2">
+        <div className="px-3">
+          {activeTab === 'seeds' && (
+            <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-2 mt-[30px]">
               {sortedStock.map((s) => {
                 const rarityMinLevelMap: any = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };
                 const minLevel = rarityMinLevelMap[s.rarity as keyof typeof rarityMinLevelMap] || 1;
@@ -110,10 +136,10 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
               );})}
             </div>
           </div>
-        )}
+          )}
 
-        {activeTab === 'boosters' && (
-          <div className="space-y-3">
+          {activeTab === 'boosters' && (
+          <div className="space-y-3 mt-[48px]">
             {Object.values(BOOSTERS).map((booster) => {
               const owned = state.inventory.find((item) => item.id === booster.id)?.count ?? 0;
               const canAfford = state.balance >= booster.price;
@@ -151,8 +177,8 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
           </div>
         )}
 
-        {activeTab === 'other' && (
-          <div className="grid grid-cols-1 gap-2">
+          {activeTab === 'other' && (
+            <div className="grid grid-cols-1 gap-2 mt-[48px]">
             {/* Plus подписка */}
             <div className="p-4 rounded-2xl bg-gradient-to-br from-yellow-400 to-yellow-600 text-white shadow-lg">
               <div className="flex items-center gap-3 mb-2">
@@ -211,7 +237,8 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
               </div>
             </div>
           </div>
-        )}
+          )}
+        </div>
       </div>
 
       {selectedSeed && (
