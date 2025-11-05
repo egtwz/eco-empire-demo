@@ -41,3 +41,4 @@ CREATE INDEX IF NOT EXISTS idx_quest_type ON daily_weekly_quests(quest_type);
 })();
 
 
+

@@ -106,8 +106,8 @@ export default function Field({ game, fieldViewMode }: { game: ReturnType<typeof
 
   // Находим возможные рецепты синтеза на основе соседних растений
   const getAvailableSynthesisRecipes = (cellId: number): string[] => {
-    // Только для пустых клеток и уровня 2+
-    if (state.field[cellId].status !== 'empty' || state.level < 2) return [];
+    // Только для пустых клеток и уровня 3+
+    if (state.field[cellId].status !== 'empty' || state.level < 3) return [];
     
     const row = Math.floor(cellId / gridSize);
     const col = cellId % gridSize;
@@ -273,7 +273,7 @@ export default function Field({ game, fieldViewMode }: { game: ReturnType<typeof
                     : 'bg-white hover:bg-gray-50'
                 }`}
               >
-                <span className={emojiSize}>{canSynthesis ? '🧬' : '➕'}</span>
+                <span className={canSynthesis ? emojiSize : 'text-xl text-gray-400'}>{canSynthesis ? '🧬' : '+'}</span>
               </button>
             );
           }

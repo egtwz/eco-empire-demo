@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { useShopStock } from '../hooks/useShopStock';
+import { useBoosterStock } from '../hooks/useBoosterStock';
 import { SeedId, RARITY_COLORS } from '../data/seeds';
 import { BOOSTERS } from '../data/boosters';
 import ShopConfirmModal from './ShopConfirmModal';
@@ -12,6 +13,7 @@ type Tab = 'seeds' | 'boosters' | 'other';
 export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }) {
   const { state, buySeed, buyBooster } = game;
   const { stock, timeToRefresh, decreaseStock } = useShopStock();
+  const { stock: boosterStock, timeToRefresh: boosterTimeToRefresh, decreaseStock: decreaseBoosterStock } = useBoosterStock();
   const [activeTab, setActiveTab] = useState<Tab>('seeds');
   const [selectedSeed, setSelectedSeed] = useState<{ id: SeedId; name: string; emoji: string; price: number } | null>(null);
   const [seedInfo, setSeedInfo] = useState<any>(null);
@@ -84,6 +86,11 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
                 Следующее обновление через: {Math.floor(timeToRefresh / 60)}:{String(timeToRefresh % 60).padStart(2, '0')}
               </div>
             )}
+            {activeTab === 'boosters' && (
+              <div className="mt-2 text-center text-sm text-gray-600 bg-gray-50 p-2 rounded-xl border border-gray-300">
+                Следующее обновление через: {Math.floor(boosterTimeToRefresh / 3600)}:{String(Math.floor((boosterTimeToRefresh % 3600) / 60)).padStart(2, '0')}:{String(boosterTimeToRefresh % 60).padStart(2, '0')}
+              </div>
+            )}
           </div>
         </div>
         
@@ -143,9 +150,13 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
             {Object.values(BOOSTERS).map((booster) => {
               const owned = state.inventory.find((item) => item.id === booster.id)?.count ?? 0;
               const canAfford = state.balance >= booster.price;
+              const stockItem = boosterStock.find(s => s.id === booster.id);
+              const availableStock = stockItem?.stock ?? 0;
+              const maxStock = stockItem?.maxStock ?? 0;
+              const isOutOfStock = availableStock === 0;
 
               return (
-                <div key={booster.id} className="p-3 rounded-2xl bg-white border border-gray-300 shadow-md">
+                <div key={booster.id} className={`p-3 rounded-2xl bg-white border border-gray-300 shadow-md ${isOutOfStock ? 'opacity-70' : ''}`}>
                   <div className="flex items-start gap-3">
                     <div className="text-3xl">{booster.emoji}</div>
                     <div className="flex-1">
@@ -160,14 +171,21 @@ export default function Shop({ game }: { game: ReturnType<typeof useGameLogic> }
                           : 'Применение: используйте из инвентаря'}
                       </div>
                       <div className="text-xs text-gray-400 mt-1">В инвентаре: {owned} шт.</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {isOutOfStock ? 'Нет в наличии' : `В наличии: ${availableStock}/${maxStock} шт`}
+                      </div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <button
-                        onClick={() => buyBooster(booster.id)}
-                        disabled={!canAfford}
+                        onClick={() => {
+                          if (buyBooster(booster.id)) {
+                            decreaseBoosterStock(booster.id);
+                          }
+                        }}
+                        disabled={!canAfford || isOutOfStock}
                         className="px-3 py-2 rounded-xl bg-[var(--primary)] text-white hover:bg-[var(--secondary)] disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                       >
-                        Купить
+                        {isOutOfStock ? 'Нет в наличии' : 'Купить'}
                       </button>
                     </div>
                   </div>

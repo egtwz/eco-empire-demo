@@ -515,9 +515,11 @@ export const PROCESSING_RECIPES: ProcessingRecipe[] = [
     buildingId: 'winery',
     name: 'Шампанское из гибридов',
     emoji: '🥂',
-    description: 'Элитное шампанское из редких гибридов',
+    description: 'Элитное шампанское из радужной розы T1, золотого яблока T1 и кристального бамбука T1',
     ingredients: [
-      { id: '', type: 'hybrid', count: 3 } // Будет заменено на реальный ID гибрида
+      { id: 'rainbow_rose_fruit_t1', type: 'hybrid', count: 1 },
+      { id: 'golden_apple_fruit_t1', type: 'hybrid', count: 1 },
+      { id: 'crystal_bamboo_fruit_t1', type: 'hybrid', count: 1 }
     ],
     resultId: 'champagne',
     processingSeconds: 3600, // 60 минут
@@ -531,9 +533,10 @@ export const PROCESSING_RECIPES: ProcessingRecipe[] = [
     buildingId: 'cannery',
     name: 'Премиум варенье',
     emoji: '🍯',
-    description: 'Эксклюзивное варенье из гибридных фруктов',
+    description: 'Эксклюзивное варенье из лунной ягоды T1 и звездной ягоды T2',
     ingredients: [
-      { id: '', type: 'hybrid', count: 5 }
+      { id: 'moon_berry_fruit_t1', type: 'hybrid', count: 3 },
+      { id: 'star_berry_fruit_t2', type: 'hybrid', count: 2 }
     ],
     resultId: 'premium_jam',
     processingSeconds: 2700, // 45 минут
@@ -547,9 +550,10 @@ export const PROCESSING_RECIPES: ProcessingRecipe[] = [
     buildingId: 'oil_press',
     name: 'Премиум масло',
     emoji: '💎',
-    description: 'Элитное масло из синтезных растений',
+    description: 'Элитное масло из кристального цветка и капли росы',
     ingredients: [
-      { id: '', type: 'synthesis', count: 2 }
+      { id: 'synthesis_crystal_flower', type: 'synthesis', count: 1 },
+      { id: 'synthesis_dew_drop', type: 'synthesis', count: 1 }
     ],
     resultId: 'premium_oil',
     processingSeconds: 3000, // 50 минут
@@ -563,9 +567,10 @@ export const PROCESSING_RECIPES: ProcessingRecipe[] = [
     buildingId: 'spinnery',
     name: 'Шелк',
     emoji: '🕸️',
-    description: 'Роскошный шелк из гибридных цветов',
+    description: 'Роскошный шелк из радужной розы T1 и призматического цветка T2',
     ingredients: [
-      { id: '', type: 'hybrid', count: 4 }
+      { id: 'rainbow_rose_fruit_t1', type: 'hybrid', count: 2 },
+      { id: 'prism_flower_fruit_t2', type: 'hybrid', count: 2 }
     ],
     resultId: 'silk',
     processingSeconds: 2400, // 40 минут
@@ -579,9 +584,11 @@ export const PROCESSING_RECIPES: ProcessingRecipe[] = [
     buildingId: 'honey_extractor',
     name: 'Нектар',
     emoji: '🍯',
-    description: 'Божественный нектар из синтезных цветов',
+    description: 'Божественный нектар из ночной почки, ледяной ягоды и базисного камня',
     ingredients: [
-      { id: '', type: 'synthesis', count: 3 }
+      { id: 'synthesis_night_bud', type: 'synthesis', count: 1 },
+      { id: 'synthesis_ice_berry', type: 'synthesis', count: 1 },
+      { id: 'synthesis_basil_gem', type: 'synthesis', count: 1 }
     ],
     resultId: 'nectar',
     processingSeconds: 4500, // 75 минут
@@ -595,9 +602,10 @@ export const PROCESSING_RECIPES: ProcessingRecipe[] = [
     buildingId: 'juicer',
     name: 'Сироп',
     emoji: '🍯',
-    description: 'Густой сироп из гибридных фруктов',
+    description: 'Густой сироп из сахарной кукурузы T1 и солнечного плода T2',
     ingredients: [
-      { id: '', type: 'hybrid', count: 6 }
+      { id: 'sugar_corn_fruit_t1', type: 'hybrid', count: 3 },
+      { id: 'solar_fruit_fruit_t2', type: 'hybrid', count: 3 }
     ],
     resultId: 'syrup',
     processingSeconds: 1800, // 30 минут
@@ -841,10 +849,10 @@ export const PROCESSING_RECIPES: ProcessingRecipe[] = [
 ];
 
 // Функция для вычисления цены переработанного продукта (×3 от стоимости ингредиентов)
-export function calculateProcessedItemPrice(ingredients: ProcessingIngredient[], getItemPrice: (id: string, type: 'seed' | 'fruit') => number): number {
+export function calculateProcessedItemPrice(ingredients: ProcessingIngredient[], getItemPrice: (id: string, type: 'seed' | 'fruit' | 'hybrid' | 'synthesis') => number): number {
   let totalCost = 0;
   for (const ing of ingredients) {
-    const price = getItemPrice(ing.id, ing.type === 'seed' ? 'seed' : 'fruit');
+    const price = getItemPrice(ing.id, ing.type);
     totalCost += price * ing.count;
   }
   return Math.round(totalCost * 3); // Прибыль ×3

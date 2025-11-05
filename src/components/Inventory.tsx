@@ -136,28 +136,28 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
         </button>
         <button
           onClick={() => {
-            if (game.state.level < 2) {
-              alert('🔒 Раздел доступен с 2 уровня');
+            if (game.state.level < 3) {
+              alert('🔒 Раздел доступен с 3 уровня');
               return;
             }
             setActiveTab('synthesis');
           }}
-          disabled={game.state.level < 2}
+          disabled={game.state.level < 3}
           className={`flex-1 py-3 rounded-xl border font-medium transition-all ${
             activeTab === 'synthesis' 
               ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white border-indigo-700 shadow-md' 
-              : game.state.level < 2 
+              : game.state.level < 3 
                 ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
                 : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
           }`}
         >
-          <div className="text-lg mb-1">{game.state.level < 2 ? '🔒' : '🧬'}</div>
+          <div className="text-lg mb-1">{game.state.level < 3 ? '🔒' : '🧬'}</div>
           <div className="text-xs">Синтез</div>
         </button>
       </div>
-      {game.state.level < 2 && (
+      {game.state.level < 3 && (
         <div className="text-center text-xs text-gray-500 mb-3">
-          🔒 Разделы "Создать гибрид" и "Синтез" доступны с 2 уровня
+          🔒 Раздел "Синтез" доступен с 3 уровня
         </div>
       )}
 
@@ -247,7 +247,7 @@ export default function Inventory({ game }: { game: ReturnType<typeof useGameLog
             <p><strong>Как работает синтез:</strong></p>
             <ol className="list-decimal pl-5 space-y-1">
               <li>На поле должно быть ровно 4 растения, расположенные так, чтобы в центре осталась пустая клетка</li>
-              <li>У вас должен быть уровень 2 или выше</li>
+              <li>У вас должен быть уровень 3 или выше</li>
               <li>Центральная пустая клетка начнёт светиться фиолетовым цветом</li>
               <li>На ней появится иконка ДНК 🧬 вместо плюсика</li>
               <li>Нажмите на неё, чтобы открыть меню синтеза</li>

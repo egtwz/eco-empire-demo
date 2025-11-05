@@ -23,7 +23,7 @@ export default function Header({ balance, game }: Props) {
         <div className="w-full bg-white" style={{ height: 'env(safe-area-inset-top)', minHeight: 'env(safe-area-inset-top)' }} />
         {/* Сам бар */}
         <div className="w-full bg-white border-b-2 border-[var(--primary)] shadow-md">
-          <div className="max-w-md mx-auto flex items-center justify-center gap-2 p-3 pb-3 flex-nowrap">
+          <div className="max-w-md mx-auto flex items-center justify-center gap-2 p-3 pb-3 flex-nowrap" style={{ paddingLeft: 'calc(0.75rem + 4px)' }}>
             <TonPlaceholder balance={game.state.tonBalance} onClick={() => setShowTonInfo(true)} />
             <button 
               onClick={() => setShowBuyEco(true)}

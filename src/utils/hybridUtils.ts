@@ -64,17 +64,46 @@ export function getFruitInfo(fruitId: string) {
     // Находим рецепт, который создает этот продукт
     const processingRecipe = PROCESSING_RECIPES.find(r => r.resultId === fruitId);
     if (processingRecipe) {
-      // Вычисляем цену как 3x от стоимости ингредиентов (используем только базовые цены, избегая рекурсии)
-      const getItemPrice = (id: string, type: 'seed' | 'fruit'): number => {
+      // Вычисляем цену как 3x от стоимости ингредиентов (включая гибриды и синтезы)
+      const getItemPrice = (id: string, type: 'seed' | 'fruit' | 'hybrid' | 'synthesis'): number => {
         if (type === 'seed') {
-          // Только базовые семена - избегаем гибридов и переработанных
           const seed = SEEDS[id as keyof typeof SEEDS];
-          return seed ? seed.price : 0;
-        } else {
-          // Только базовые фрукты - избегаем гибридов, синтезов и переработанных
+          if (seed) return seed.price;
+          // Проверяем гибридные семена
+          const hybridRecipe = HYBRID_RECIPES.find(r => r.resultSeedId === id);
+          if (hybridRecipe) {
+            return calculateHybridSeedPrice(hybridRecipe.ingredients);
+          }
+          return 0;
+        } else if (type === 'fruit') {
           const fruit = FRUITS[id as keyof typeof FRUITS];
-          return fruit ? fruit.sellPrice : 0;
+          if (fruit) return fruit.sellPrice;
+          // Проверяем гибридные/синтезные/переработанные фрукты (но избегаем рекурсии)
+          const hybridRecipe = HYBRID_RECIPES.find(r => r.resultFruitId === id);
+          if (hybridRecipe) {
+            return calculateHybridFruitPrice(hybridRecipe.ingredients);
+          }
+          const synthesisPlant = SYNTHESIS_PLANTS.find(p => p.id === id);
+          if (synthesisPlant) {
+            return synthesisPlant.sellPrice;
+          }
+          return 0;
+        } else if (type === 'hybrid') {
+          // Для гибридов берем цену фрукта
+          const hybridRecipe = HYBRID_RECIPES.find(r => r.resultFruitId === id);
+          if (hybridRecipe) {
+            return calculateHybridFruitPrice(hybridRecipe.ingredients);
+          }
+          return 0;
+        } else if (type === 'synthesis') {
+          // Для синтеза берем цену фрукта
+          const synthesisPlant = SYNTHESIS_PLANTS.find(p => p.id === id);
+          if (synthesisPlant) {
+            return synthesisPlant.sellPrice;
+          }
+          return 0;
         }
+        return 0;
       };
       
       // Если sellPrice === -1, значит предмет нельзя продать
